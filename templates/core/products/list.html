@@ -1,10 +1,10 @@
-{% extends "base.html" %}
+{% extends "base.html" %}{% load pricing_tags %}
 {% block content %}
 <div class="page-heading"><div><p class="eyebrow">SELLING DATABASE</p><h1>Sellable Products</h1><p>Walk-In/Tie-Up prices and itemized production recipes.</p></div><a class="btn primary" href="{% url 'product_create' %}">+ Add Product</a></div>
 <section class="panel">
   <form class="search-row"><input name="q" value="{{ query }}" placeholder="Search product"><button class="btn secondary">Search</button></form>
   <div class="table-wrap"><table><thead><tr><th>Product</th><th>Type</th><th>Walk-In</th><th>Tie-Up</th><th>Minimum</th><th>Components</th><th></th></tr></thead><tbody>
-  {% for product in products %}<tr><td><a href="{% url 'product_detail' product.pk %}"><strong>{{ product.name }}</strong></a></td><td>{{ product.get_pricing_type_display }}<div class="muted">{{ product.pricing_basis }}</div></td><td>₱{{ product.walk_in_rate|floatformat:2 }}</td><td>₱{{ product.tie_up_rate|floatformat:2 }}</td><td>₱{{ product.minimum_price|floatformat:2 }}</td><td>{{ product.cost_components.count }}</td><td class="actions"><a href="{% url 'product_edit' product.pk %}">Edit</a><a class="danger-link" href="{% url 'product_delete' product.pk %}">Delete</a></td></tr>{% empty %}<tr><td colspan="7" class="empty">No products found.</td></tr>{% endfor %}
+  {% for product in products %}<tr><td><a href="{% url 'product_detail' product.pk %}"><strong>{{ product.name }}</strong></a></td><td>{{ product.get_pricing_type_display }}<div class="muted">{{ product.pricing_basis }}</div></td><td>₱{{ product.walk_in_rate|number2 }}</td><td>₱{{ product.tie_up_rate|number2 }}</td><td>₱{{ product.minimum_price|number2 }}</td><td>{{ product.cost_components.count }}</td><td class="actions"><a href="{% url 'product_edit' product.pk %}">Edit</a><a class="danger-link" href="{% url 'product_delete' product.pk %}">Delete</a></td></tr>{% empty %}<tr><td colspan="7" class="empty">No products found.</td></tr>{% endfor %}
   </tbody></table></div>
 </section>
 {% endblock %}

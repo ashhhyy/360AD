@@ -1,4 +1,4 @@
-{% extends "base.html" %}
+{% extends "base.html" %}{% load pricing_tags %}
 {% block content %}
 <div class="page-heading">
   <div><p class="eyebrow">ADMIN CONTROL CENTER</p><h1>Dashboard</h1><p>Manage pricing, cost recipes, clients, and quotations.</p></div>
@@ -14,7 +14,7 @@
   <div class="panel-head"><div><h2>Recent quotations</h2><p>Latest saved quotation records</p></div><a href="{% url 'quotation_list' %}">View all</a></div>
   <div class="table-wrap"><table><thead><tr><th>Quote</th><th>Client</th><th>Date</th><th>Status</th><th>Selling</th><th>GP</th></tr></thead><tbody>
     {% for quote in recent_quotations %}
-    <tr><td><a href="{% url 'quotation_detail' quote.pk %}">{{ quote.quote_number }}</a></td><td>{{ quote.client }}</td><td>{{ quote.quotation_date }}</td><td><span class="badge">{{ quote.get_status_display }}</span></td><td>₱{{ quote.subtotal|floatformat:2 }}</td><td>₱{{ quote.gross_profit|floatformat:2 }}</td></tr>
+    <tr><td><a href="{% url 'quotation_detail' quote.pk %}">{{ quote.quote_number }}</a></td><td>{{ quote.client }}</td><td>{{ quote.quotation_date }}</td><td><span class="badge">{{ quote.get_status_display }}</span></td><td>₱{{ quote.subtotal|number2 }}</td><td>₱{{ quote.gross_profit|number2 }}</td></tr>
     {% empty %}<tr><td colspan="6" class="empty">No quotations yet.</td></tr>{% endfor %}
   </tbody></table></div>
 </section>

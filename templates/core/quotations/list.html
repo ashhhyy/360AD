@@ -1,10 +1,10 @@
-{% extends "base.html" %}
+{% extends "base.html" %}{% load pricing_tags %}
 {% block content %}
 <div class="page-heading"><div><p class="eyebrow">ADMIN QUOTATIONS</p><h1>Quotations</h1><p>Saved costing and selling records.</p></div><a class="btn primary" href="{% url 'quotation_create' %}">+ New Quotation</a></div>
 <section class="panel">
   <form class="search-row"><input name="q" value="{{ query }}" placeholder="Search quotation or client"><button class="btn secondary">Search</button></form>
   <div class="table-wrap"><table><thead><tr><th>Quotation</th><th>Client</th><th>Project</th><th>Date</th><th>Status</th><th>Cost</th><th>Selling</th><th>GP</th><th></th></tr></thead><tbody>
-  {% for quote in quotations %}<tr><td><a href="{% url 'quotation_detail' quote.pk %}"><strong>{{ quote.quote_number }}</strong></a></td><td>{{ quote.client }}</td><td>{{ quote.project_name|default:"—" }}</td><td>{{ quote.quotation_date }}</td><td><span class="badge">{{ quote.get_status_display }}</span></td><td>₱{{ quote.total_cost|floatformat:2 }}</td><td>₱{{ quote.subtotal|floatformat:2 }}</td><td>₱{{ quote.gross_profit|floatformat:2 }}<div class="muted">{{ quote.gp_margin|floatformat:2 }}%</div></td><td class="actions"><a href="{% url 'quotation_edit' quote.pk %}">Edit</a><a class="danger-link" href="{% url 'quotation_delete' quote.pk %}">Delete</a></td></tr>{% empty %}<tr><td colspan="9" class="empty">No quotations found.</td></tr>{% endfor %}
+  {% for quote in quotations %}<tr><td><a href="{% url 'quotation_detail' quote.pk %}"><strong>{{ quote.quote_number }}</strong></a></td><td>{{ quote.client }}</td><td>{{ quote.project_name|default:"—" }}</td><td>{{ quote.quotation_date }}</td><td><span class="badge">{{ quote.get_status_display }}</span></td><td>₱{{ quote.total_cost|number2 }}</td><td>₱{{ quote.subtotal|number2 }}</td><td>₱{{ quote.gross_profit|number2 }}<div class="muted">{{ quote.gp_margin|number2 }}%</div></td><td class="actions"><a href="{% url 'quotation_edit' quote.pk %}">Edit</a><a class="danger-link" href="{% url 'quotation_delete' quote.pk %}">Delete</a></td></tr>{% empty %}<tr><td colspan="9" class="empty">No quotations found.</td></tr>{% endfor %}
   </tbody></table></div>
 </section>
 {% endblock %}

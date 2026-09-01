@@ -1,3 +1,5 @@
+from decimal import Decimal, InvalidOperation
+
 from django import template
 
 
@@ -10,3 +12,14 @@ def subtract(value, arg):
         return value - arg
     except (TypeError, ValueError):
         return ""
+
+
+@register.filter
+def number2(value):
+    """Display numeric values with commas and exactly two decimal places."""
+    if value is None or value == "":
+        return ""
+    try:
+        return f"{Decimal(str(value)):,.2f}"
+    except (InvalidOperation, TypeError, ValueError):
+        return value

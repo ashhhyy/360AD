@@ -8,8 +8,10 @@ from django.test import TestCase
 from django.urls import reverse
 from openpyxl import load_workbook
 
+from .forms import CostItemForm
 from .models import Client, CostItem, Product, ProductCostComponent, Quotation, QuotationItem, QuotationItemExtraCost
 from .services import recalculate_quotation_item
+from .templatetags.pricing_tags import number2
 
 
 class PricingCrmTests(TestCase):
@@ -105,6 +107,8 @@ class PricingCrmTests(TestCase):
         workbook = load_workbook(BytesIO(response.content), data_only=False)
         self.assertEqual(workbook.sheetnames, ["Quotation", "Itemized Costs"])
         self.assertEqual(workbook["Itemized Costs"]["B2"].value, "Banner 10oz Tarpaulin")
+        self.assertEqual(workbook["Itemized Costs"]["E2"].number_format, "₱#,##0.00")
+        self.assertEqual(workbook["Itemized Costs"]["F2"].number_format, "#,##0.00")
 
     def test_material_crud_create(self):
         self.client.login(username="admin", password="test-password")
@@ -146,6 +150,28 @@ class PricingCrmTests(TestCase):
         self.assertEqual(response.status_code, 200)
         workbook = load_workbook(BytesIO(response.content), data_only=False)
         self.assertEqual(workbook.sheetnames, ["Cost Items", "Products", "Cost Recipes", "Clients"])
+        self.assertEqual(workbook["Cost Items"]["E2"].number_format, "₱#,##0.00")
+        self.assertEqual(workbook["Cost Recipes"]["E2"].number_format, "#,##0.00")
+
+    def test_numbers_use_commas_and_two_decimal_places(self):
+        self.assertEqual(number2(Decimal("1234567.8")), "1,234,567.80")
+        product = Product.objects.get(name="Tarpaulin")
+        product.walk_in_rate = Decimal("1234567.80")
+        product.save()
+        self.client.login(username="admin", password="test-password")
+        response = self.client.get(reverse("product_detail", args=[product.pk]))
+        self.assertContains(response, "₱1,234,567.80")
+
+    def test_decimal_form_inputs_show_two_decimal_places(self):
+        material = CostItem.objects.get(name="Banner 10oz Tarpaulin")
+        form = CostItemForm(instance=material)
+        self.assertIn('value="3.00"', str(form["unit_cost"]))
+        self.assertIn('step="0.01"', str(form["unit_cost"]))
+
+    def test_searchable_dropdown_script_is_loaded(self):
+        self.client.login(username="admin", password="test-password")
+        response = self.client.get(reverse("quotation_create"))
+        self.assertRegex(response.content.decode(), r"/static/core/app\.[a-f0-9]+\.js")
 
     def test_deployment_admin_command(self):
         with patch.dict(

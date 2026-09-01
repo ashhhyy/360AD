@@ -391,6 +391,9 @@ def quotation_export_excel(request, pk):
         cell.fill = dark_fill
         cell.font = Font(color="FFFFFF", bold=True)
     summary.auto_filter.ref = f"A5:J{last_item_row}"
+    for row in summary.iter_rows(min_row=6, max_row=last_item_row, min_col=3, max_col=7):
+        for cell in row:
+            cell.number_format = '#,##0.00'
     for row in summary.iter_rows(min_row=6, max_row=last_item_row, min_col=8, max_col=10):
         for cell in row:
             cell.number_format = '₱#,##0.00'
@@ -433,7 +436,9 @@ def quotation_export_excel(request, pk):
             )
     _style_sheet(costs, [28, 30, 22, 24, 14, 12, 18, 16])
     for row in costs.iter_rows(min_row=2, min_col=5, max_col=8):
-        row[0].number_format = '₱#,##0.0000'
+        row[0].number_format = '₱#,##0.00'
+        row[1].number_format = '#,##0.00'
+        row[2].number_format = '#,##0.00'
         row[3].number_format = '₱#,##0.00'
 
     return _excel_response(workbook, f"{quotation.quote_number}.xlsx")
@@ -451,7 +456,7 @@ def master_data_export_excel(request):
         )
     _style_sheet(materials, [30, 24, 22, 18, 14, 14, 10, 36])
     for cell in materials["E"][1:]:
-        cell.number_format = '₱#,##0.0000'
+        cell.number_format = '₱#,##0.00'
 
     products = workbook.create_sheet("Products")
     products.append(["Product", "Pricing Type", "Basis", "Walk-In Rate", "Tie-Up Rate", "Minimum", "Buffer %", "Active"])
@@ -491,8 +496,10 @@ def master_data_export_excel(request):
             ]
         )
     _style_sheet(recipes, [32, 30, 22, 22, 16, 14, 10, 36])
+    for cell in recipes["E"][1:]:
+        cell.number_format = '#,##0.00'
     for cell in recipes["F"][1:]:
-        cell.number_format = '₱#,##0.0000'
+        cell.number_format = '₱#,##0.00'
 
     clients = workbook.create_sheet("Clients")
     clients.append(["Name", "Company", "Contact", "Email", "Address", "TIN", "Active", "Notes"])

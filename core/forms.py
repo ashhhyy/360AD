@@ -1,6 +1,25 @@
+from decimal import Decimal, InvalidOperation
+
 from django import forms
 
 from .models import Client, CostItem, Product, ProductCostComponent, Quotation, QuotationItem, QuotationItemExtraCost
+
+
+class TwoDecimalNumberInput(forms.NumberInput):
+    """Keep forms readable while models retain precise costing calculations."""
+
+    def __init__(self, attrs=None):
+        defaults = dict(attrs or {})
+        defaults.update({"step": "0.01", "inputmode": "decimal"})
+        super().__init__(defaults)
+
+    def format_value(self, value):
+        if value is None or value == "":
+            return None
+        try:
+            return f"{Decimal(str(value)):.2f}"
+        except (InvalidOperation, TypeError, ValueError):
+            return value
 
 
 class StyledModelForm(forms.ModelForm):
@@ -10,6 +29,8 @@ class StyledModelForm(forms.ModelForm):
             if isinstance(field.widget, forms.CheckboxInput):
                 field.widget.attrs["class"] = "form-check-input"
             else:
+                if isinstance(field, forms.DecimalField):
+                    field.widget = TwoDecimalNumberInput(attrs=field.widget.attrs)
                 field.widget.attrs["class"] = "form-control"
 
 
