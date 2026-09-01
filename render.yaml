@@ -3,6 +3,7 @@ services:
     name: 360ad-pricing-crm
     runtime: python
     plan: free
+    region: singapore
     buildCommand: bash build.sh
     startCommand: gunicorn pricing_crm.wsgi:application --bind 0.0.0.0:$PORT
     envVars:
