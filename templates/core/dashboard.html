@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-heading">
+  <div><p class="eyebrow">ADMIN CONTROL CENTER</p><h1>Dashboard</h1><p>Manage pricing, cost recipes, clients, and quotations.</p></div>
+  <a class="btn primary" href="{% url 'quotation_create' %}">+ New Quotation</a>
+</div>
+<section class="kpi-grid">
+  <a class="kpi" href="{% url 'quotation_list' %}"><span>Quotations</span><strong>{{ quotation_count }}</strong></a>
+  <a class="kpi" href="{% url 'client_list' %}"><span>Active Clients</span><strong>{{ client_count }}</strong></a>
+  <a class="kpi" href="{% url 'product_list' %}"><span>Sellable Products</span><strong>{{ product_count }}</strong></a>
+  <a class="kpi" href="{% url 'cost_item_list' %}"><span>Cost Items</span><strong>{{ cost_item_count }}</strong></a>
+</section>
+<section class="panel">
+  <div class="panel-head"><div><h2>Recent quotations</h2><p>Latest saved quotation records</p></div><a href="{% url 'quotation_list' %}">View all</a></div>
+  <div class="table-wrap"><table><thead><tr><th>Quote</th><th>Client</th><th>Date</th><th>Status</th><th>Selling</th><th>GP</th></tr></thead><tbody>
+    {% for quote in recent_quotations %}
+    <tr><td><a href="{% url 'quotation_detail' quote.pk %}">{{ quote.quote_number }}</a></td><td>{{ quote.client }}</td><td>{{ quote.quotation_date }}</td><td><span class="badge">{{ quote.get_status_display }}</span></td><td>₱{{ quote.subtotal|floatformat:2 }}</td><td>₱{{ quote.gross_profit|floatformat:2 }}</td></tr>
+    {% empty %}<tr><td colspan="6" class="empty">No quotations yet.</td></tr>{% endfor %}
+  </tbody></table></div>
+</section>
+{% endblock %}

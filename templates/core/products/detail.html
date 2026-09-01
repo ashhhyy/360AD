@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-heading"><div><p class="eyebrow">COST RECIPE</p><h1>{{ product.name }}</h1><p>{{ product.get_pricing_type_display }} · {{ product.pricing_basis }}</p></div><div><a class="btn secondary" href="{% url 'product_edit' product.pk %}">Edit Product</a> <a class="btn primary" href="{% url 'component_create' product.pk %}">+ Add Cost Component</a></div></div>
+<section class="kpi-grid three">
+  <div class="kpi"><span>Walk-In Rate</span><strong>₱{{ product.walk_in_rate|floatformat:2 }}</strong></div>
+  <div class="kpi"><span>Tie-Up Rate</span><strong>₱{{ product.tie_up_rate|floatformat:2 }}</strong></div>
+  <div class="kpi"><span>Production Buffer</span><strong>{{ product.buffer_percent|floatformat:2 }}%</strong></div>
+</section>
+<section class="panel">
+  <div class="panel-head"><div><h2>Itemized cost recipe</h2><p>These lines will be snapshotted into every saved quotation.</p></div></div>
+  <div class="table-wrap"><table><thead><tr><th>#</th><th>Cost Item</th><th>Category</th><th>Basis</th><th>Usage</th><th>Unit Cost</th><th></th></tr></thead><tbody>
+  {% for component in product.cost_components.all %}<tr><td>{{ component.sequence }}</td><td><strong>{{ component.cost_item.name }}</strong></td><td>{{ component.cost_item.get_category_display }}</td><td>{{ component.get_basis_display }}</td><td>{{ component.usage_quantity|floatformat:4 }}</td><td>₱{{ component.cost_item.unit_cost|floatformat:4 }}</td><td class="actions"><a href="{% url 'component_edit' component.pk %}">Edit</a><a class="danger-link" href="{% url 'component_delete' component.pk %}">Delete</a></td></tr>{% empty %}<tr><td colspan="7" class="empty">No cost components yet. Add sticker, laminate, manpower, and every other cost used to produce this item.</td></tr>{% endfor %}
+  </tbody></table></div>
+</section>
+{% endblock %}

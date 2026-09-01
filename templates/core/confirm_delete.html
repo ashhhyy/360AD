@@ -1,0 +1,4 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="panel danger-panel"><p class="eyebrow">CONFIRM ACTION</p><h1>Delete {{ label }}?</h1><p>You are about to delete <strong>{{ object }}</strong>. If it is already used by a quotation, the system will protect it.</p><form method="post">{% csrf_token %}<button class="btn danger" type="submit">Delete</button> <button class="btn secondary" type="button" onclick="history.back()">Cancel</button></form></section>
+{% endblock %}

@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-heading"><div><p class="eyebrow">ADMIN</p><h1>{{ title }}</h1></div><button class="btn secondary" type="button" onclick="history.back()">Back</button></div>
+<section class="panel form-panel">
+  <form method="post" class="grid-form">
+    {% csrf_token %}
+    {% if form.non_field_errors %}<div class="alert error full-row">{{ form.non_field_errors }}</div>{% endif %}
+    {% for field in form %}
+      <div class="field {% if field.name == 'notes' or field.name == 'address' %}full-row{% endif %}">
+        {% if field.field.widget.input_type == 'checkbox' %}
+          <label class="checkbox-row">{{ field }} <span>{{ field.label }}</span></label>
+        {% else %}
+          <label for="{{ field.id_for_label }}">{{ field.label }}</label>{{ field }}
+        {% endif %}
+        {% if field.help_text %}<small>{{ field.help_text }}</small>{% endif %}
+        {% for error in field.errors %}<small class="field-error">{{ error }}</small>{% endfor %}
+      </div>
+    {% endfor %}
+    <div class="form-actions full-row"><button class="btn primary" type="submit">Save</button><button class="btn secondary" type="button" onclick="history.back()">Cancel</button></div>
+  </form>
+</section>
+{% endblock %}

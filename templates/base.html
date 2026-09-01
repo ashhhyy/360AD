@@ -1,0 +1,37 @@
+{% load static %}
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}360 A.D Pricing CRM{% endblock %}</title>
+  <link rel="stylesheet" href="{% static 'core/app.css' %}">
+</head>
+<body>
+  {% if user.is_authenticated %}
+  <aside class="sidebar">
+    <div class="brand"><span>360</span> A.D</div>
+    <div class="brand-subtitle">Pricing & Quotation CRM</div>
+    <nav>
+      <a href="{% url 'dashboard' %}">Dashboard</a>
+      <a href="{% url 'quotation_list' %}">Quotations</a>
+      <a href="{% url 'client_list' %}">Clients</a>
+      <a href="{% url 'product_list' %}">Sellable Products</a>
+      <a href="{% url 'cost_item_list' %}">Materials & Costs</a>
+      <a href="{% url 'master_data_export_excel' %}">Export Master Data</a>
+    </nav>
+    <div class="sidebar-footer">
+      <div class="user-name">{{ user.get_full_name|default:user.username }}</div>
+      <div class="muted">Administrator</div>
+      <form method="post" action="{% url 'logout' %}">{% csrf_token %}<button class="link-button">Log out</button></form>
+    </div>
+  </aside>
+  {% endif %}
+  <main class="{% if user.is_authenticated %}content{% else %}login-shell{% endif %}">
+    {% if messages %}
+      {% for message in messages %}<div class="alert {{ message.tags }}">{{ message }}</div>{% endfor %}
+    {% endif %}
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>

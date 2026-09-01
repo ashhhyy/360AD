@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-heading"><div><p class="eyebrow">TRUE COST DATABASE</p><h1>Materials & Cost Items</h1><p>Sticker, laminate, board, ink, electricity, manpower, machines, and other production costs.</p></div><a class="btn primary" href="{% url 'cost_item_create' %}">+ Add Cost Item</a></div>
+<section class="panel">
+  <form class="search-row"><input name="q" value="{{ query }}" placeholder="Search cost item or supplier"><button class="btn secondary">Search</button></form>
+  <div class="table-wrap"><table><thead><tr><th>Cost Item</th><th>Category</th><th>Supplier</th><th>Basis</th><th>Unit Cost</th><th>Status</th><th></th></tr></thead><tbody>
+  {% for item in items %}<tr><td><strong>{{ item.name }}</strong></td><td>{{ item.get_category_display }}</td><td>{{ item.supplier|default:"—" }}</td><td>{{ item.get_unit_display }}</td><td>₱{{ item.unit_cost|floatformat:4 }}</td><td>{% if item.active %}<span class="badge success">Active</span>{% else %}<span class="badge">Inactive</span>{% endif %}</td><td class="actions"><a href="{% url 'cost_item_edit' item.pk %}">Edit</a><a class="danger-link" href="{% url 'cost_item_delete' item.pk %}">Delete</a></td></tr>{% empty %}<tr><td colspan="7" class="empty">No cost items found.</td></tr>{% endfor %}
+  </tbody></table></div>
+</section>
+{% endblock %}

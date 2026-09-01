@@ -1,0 +1,37 @@
+from django.urls import path
+
+from . import views
+
+
+urlpatterns = [
+    path("", views.dashboard, name="dashboard"),
+    path("clients/", views.client_list, name="client_list"),
+    path("clients/new/", views.client_create, name="client_create"),
+    path("clients/<int:pk>/edit/", views.client_edit, name="client_edit"),
+    path("clients/<int:pk>/delete/", views.client_delete, name="client_delete"),
+    path("cost-items/", views.cost_item_list, name="cost_item_list"),
+    path("cost-items/new/", views.cost_item_create, name="cost_item_create"),
+    path("cost-items/<int:pk>/edit/", views.cost_item_edit, name="cost_item_edit"),
+    path("cost-items/<int:pk>/delete/", views.cost_item_delete, name="cost_item_delete"),
+    path("products/", views.product_list, name="product_list"),
+    path("products/new/", views.product_create, name="product_create"),
+    path("products/<int:pk>/", views.product_detail, name="product_detail"),
+    path("products/<int:pk>/edit/", views.product_edit, name="product_edit"),
+    path("products/<int:pk>/delete/", views.product_delete, name="product_delete"),
+    path("products/<int:product_pk>/components/new/", views.component_create, name="component_create"),
+    path("components/<int:pk>/edit/", views.component_edit, name="component_edit"),
+    path("components/<int:pk>/delete/", views.component_delete, name="component_delete"),
+    path("quotations/", views.quotation_list, name="quotation_list"),
+    path("quotations/new/", views.quotation_create, name="quotation_create"),
+    path("quotations/<int:pk>/", views.quotation_detail, name="quotation_detail"),
+    path("quotations/<int:pk>/edit/", views.quotation_edit, name="quotation_edit"),
+    path("quotations/<int:pk>/delete/", views.quotation_delete, name="quotation_delete"),
+    path("quotations/<int:quote_pk>/items/new/", views.quotation_item_create, name="quotation_item_create"),
+    path("quote-items/<int:pk>/edit/", views.quotation_item_edit, name="quotation_item_edit"),
+    path("quote-items/<int:pk>/delete/", views.quotation_item_delete, name="quotation_item_delete"),
+    path("quote-items/<int:item_pk>/extra-costs/new/", views.extra_cost_create, name="extra_cost_create"),
+    path("extra-costs/<int:pk>/edit/", views.extra_cost_edit, name="extra_cost_edit"),
+    path("extra-costs/<int:pk>/delete/", views.extra_cost_delete, name="extra_cost_delete"),
+    path("quotations/<int:pk>/export.xlsx", views.quotation_export_excel, name="quotation_export_excel"),
+    path("exports/master-data.xlsx", views.master_data_export_excel, name="master_data_export_excel"),
+]

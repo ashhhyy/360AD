@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block title %}Admin Login | 360 A.D{% endblock %}
+{% block content %}
+<section class="login-card">
+  <div class="login-logo"><span>360</span> A.D</div>
+  <p class="eyebrow">ADMIN-ONLY MVP</p>
+  <h1>Pricing & Quotation CRM</h1>
+  <p class="muted">Sign in with an authorized administrator account.</p>
+  {% if form.errors %}<div class="alert error">Incorrect username or password.</div>{% endif %}
+  <form method="post" class="stack-form">
+    {% csrf_token %}
+    <label>Username {{ form.username }}</label>
+    <label>Password {{ form.password }}</label>
+    <button class="btn primary full" type="submit">Sign in</button>
+  </form>
+</section>
+{% endblock %}
