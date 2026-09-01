@@ -1,0 +1,20 @@
+services:
+  - type: web
+    name: 360ad-pricing-crm
+    runtime: python
+    plan: free
+    buildCommand: ./build.sh
+    startCommand: gunicorn pricing_crm.wsgi:application --bind 0.0.0.0:$PORT
+    envVars:
+      - key: DEBUG
+        value: "False"
+      - key: SECRET_KEY
+        generateValue: true
+      - key: DATABASE_URL
+        sync: false
+      - key: ADMIN_USERNAME
+        value: admin
+      - key: ADMIN_EMAIL
+        sync: false
+      - key: ADMIN_PASSWORD
+        sync: false
