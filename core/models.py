@@ -1,7 +1,8 @@
 from decimal import Decimal
 
+from django.conf import settings
 from django.core.validators import MinValueValidator
-from django.db import models
+from django.db import models, transaction
 from django.db.models import Sum
 from django.utils import timezone
 
@@ -127,6 +128,18 @@ class ProductCostComponent(TimeStampedModel):
         return f"{self.product} – {self.cost_item}"
 
 
+class QuotationSequence(models.Model):
+    year = models.PositiveIntegerField(primary_key=True)
+    next_number = models.PositiveIntegerField(default=1)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["year"]
+
+    def __str__(self):
+        return f"{self.year}: next {self.next_number:05d}"
+
+
 class Quotation(TimeStampedModel):
     class Status(models.TextChoices):
         DRAFT = "DRAFT", "Draft"
@@ -154,12 +167,46 @@ class Quotation(TimeStampedModel):
     class Meta:
         ordering = ["-created_at"]
 
+    @classmethod
+    def _configured_start_number(cls, year):
+        if year == settings.QUOTE_SEQUENCE_START_YEAR:
+            return settings.QUOTE_SEQUENCE_START_NUMBER
+        return 1
+
+    @classmethod
+    def _allocate_number(cls, year):
+        configured_start = cls._configured_start_number(year)
+        sequence, created = QuotationSequence.objects.select_for_update().get_or_create(
+            year=year,
+            defaults={"next_number": configured_start},
+        )
+        next_number = sequence.next_number
+
+        if created:
+            prefix = f"360AD-{year}-"
+            existing_numbers = []
+            for quote_number in cls.objects.filter(quote_number__startswith=prefix).values_list(
+                "quote_number", flat=True
+            ):
+                try:
+                    existing_numbers.append(int(quote_number.rsplit("-", 1)[1]))
+                except (IndexError, TypeError, ValueError):
+                    continue
+            if existing_numbers:
+                next_number = max(configured_start, max(existing_numbers) + 1)
+
+        sequence.next_number = next_number + 1
+        sequence.save(update_fields=["next_number", "updated_at"])
+        return next_number
+
     def save(self, *args, **kwargs):
-        super().save(*args, **kwargs)
-        if not self.quote_number:
-            number = f"360AD-{self.quotation_date.year}-{self.pk:05d}"
-            type(self).objects.filter(pk=self.pk).update(quote_number=number)
-            self.quote_number = number
+        if self.quote_number:
+            return super().save(*args, **kwargs)
+
+        with transaction.atomic():
+            sequence_number = self._allocate_number(self.quotation_date.year)
+            self.quote_number = f"360AD-{self.quotation_date.year}-{sequence_number:05d}"
+            return super().save(*args, **kwargs)
 
     @property
     def total_cost(self):
@@ -202,6 +249,14 @@ class QuotationItem(TimeStampedModel):
     unit = models.CharField(max_length=2, choices=Unit.choices, default=Unit.FEET)
     quantity = models.DecimalField(max_digits=12, decimal_places=2, default=1, validators=[MinValueValidator(Decimal("0.01"))])
     selling_rate = models.DecimalField(max_digits=14, decimal_places=2, validators=[MinValueValidator(0)])
+    selling_price_override = models.DecimalField(
+        max_digits=14,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        validators=[MinValueValidator(0)],
+        help_text="Optional final selling price before VAT.",
+    )
     other_charges = models.DecimalField(max_digits=14, decimal_places=2, default=0, validators=[MinValueValidator(0)])
     discount = models.DecimalField(max_digits=14, decimal_places=2, default=0, validators=[MinValueValidator(0)])
     cost_total = models.DecimalField(max_digits=14, decimal_places=2, default=0)

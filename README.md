@@ -75,6 +75,10 @@ GP Margin % = Gross Profit ÷ Selling Price before VAT
 
 VAT is not included in gross profit.
 
+Administrators can optionally enter a manual selling-price override on a quotation item. The override is the final selling price before VAT and replaces the automatic rate, other charges, discount, and minimum-price calculation for that line. Leaving it blank keeps the normal automatic calculation.
+
+Quotation numbering uses a database-locked yearly sequence. Existing quotation numbers are preserved. For 2026, the next available number begins at `360AD-2026-00054`; later years begin at `00001`. The start year and number can be changed with `QUOTE_SEQUENCE_START_YEAR` and `QUOTE_SEQUENCE_START_NUMBER`.
+
 ## Important pricing review
 
 The starter data preserves the workbook's current selling rates, but production recipes are now itemized from the Materials sheet. Review these records before using the app for live customer prices:

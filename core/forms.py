@@ -110,6 +110,7 @@ class QuotationItemForm(StyledModelForm):
             "unit",
             "quantity",
             "selling_rate",
+            "selling_price_override",
             "other_charges",
             "discount",
         ]
@@ -119,6 +120,11 @@ class QuotationItemForm(StyledModelForm):
         super().__init__(*args, **kwargs)
         self.fields["selling_rate"].required = False
         self.fields["selling_rate"].help_text = "Leave blank to use the product's Walk-In or Tie-Up rate."
+        self.fields["selling_price_override"].label = "Manual Selling Price Override (Before VAT)"
+        self.fields["selling_price_override"].help_text = (
+            "Optional. When entered, this exact amount becomes the final selling price before VAT "
+            "and replaces the automatic rate, other charges, discount, and minimum-price calculation."
+        )
         self.fields["product"].queryset = Product.objects.filter(active=True)
 
     def clean(self):

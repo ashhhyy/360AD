@@ -1,4 +1,5 @@
 from decimal import Decimal
+from datetime import date
 from io import BytesIO
 from unittest.mock import patch
 
@@ -59,6 +60,45 @@ class PricingCrmTests(TestCase):
         self.assertEqual(quote.subtotal, Decimal("112.50"))
         self.assertEqual(quote.gross_profit, Decimal("74.23"))
 
+    def test_quotation_sequence_preserves_old_numbers_and_starts_at_54(self):
+        client = Client.objects.get(name="Walk-In Customer")
+        old_one = Quotation.objects.create(
+            quote_number="360AD-2026-00001",
+            quotation_date=date(2026, 1, 1),
+            client=client,
+            created_by=self.admin,
+        )
+        old_two = Quotation.objects.create(
+            quote_number="360AD-2026-00002",
+            quotation_date=date(2026, 1, 2),
+            client=client,
+            created_by=self.admin,
+        )
+
+        first_live = Quotation.objects.create(
+            quotation_date=date(2026, 9, 2),
+            client=client,
+            created_by=self.admin,
+        )
+        second_live = Quotation.objects.create(
+            quotation_date=date(2026, 9, 2),
+            client=client,
+            created_by=self.admin,
+        )
+        next_year = Quotation.objects.create(
+            quotation_date=date(2027, 1, 2),
+            client=client,
+            created_by=self.admin,
+        )
+
+        old_one.refresh_from_db()
+        old_two.refresh_from_db()
+        self.assertEqual(old_one.quote_number, "360AD-2026-00001")
+        self.assertEqual(old_two.quote_number, "360AD-2026-00002")
+        self.assertEqual(first_live.quote_number, "360AD-2026-00054")
+        self.assertEqual(second_live.quote_number, "360AD-2026-00055")
+        self.assertEqual(next_year.quote_number, "360AD-2027-00001")
+
     def test_saved_snapshot_does_not_change_with_material_rate(self):
         _, item = self.create_tarpaulin_quote()
         original_cost = item.cost_total
@@ -99,6 +139,25 @@ class PricingCrmTests(TestCase):
         self.assertEqual(item.cost_total, Decimal("15076.00"))
         self.assertEqual(item.selling_total, Decimal("25000.00"))
 
+    def test_admin_can_override_final_selling_price(self):
+        quote, item = self.create_tarpaulin_quote()
+        automatic_selling = item.selling_total
+        item.selling_price_override = Decimal("80.00")
+        item.save()
+        recalculate_quotation_item(item)
+        item.refresh_from_db()
+
+        self.assertNotEqual(automatic_selling, Decimal("80.00"))
+        self.assertEqual(item.selling_total, Decimal("80.00"))
+        self.assertEqual(quote.subtotal, Decimal("80.00"))
+        self.assertEqual(quote.gross_profit, Decimal("41.73"))
+
+        item.selling_price_override = None
+        item.save()
+        recalculate_quotation_item(item)
+        item.refresh_from_db()
+        self.assertEqual(item.selling_total, automatic_selling)
+
     def test_quotation_excel_contains_cost_breakdown(self):
         quote, _ = self.create_tarpaulin_quote()
         self.client.login(username="admin", password="test-password")
@@ -106,6 +165,7 @@ class PricingCrmTests(TestCase):
         self.assertEqual(response.status_code, 200)
         workbook = load_workbook(BytesIO(response.content), data_only=False)
         self.assertEqual(workbook.sheetnames, ["Quotation", "Itemized Costs"])
+        self.assertEqual(workbook["Quotation"]["I5"].value, "Manual Override")
         self.assertEqual(workbook["Itemized Costs"]["B2"].value, "Banner 10oz Tarpaulin")
         self.assertEqual(workbook["Itemized Costs"]["E2"].number_format, "₱#,##0.00")
         self.assertEqual(workbook["Itemized Costs"]["F2"].number_format, "#,##0.00")
@@ -127,6 +187,25 @@ class PricingCrmTests(TestCase):
         )
         self.assertRedirects(response, reverse("cost_item_list"))
         self.assertTrue(CostItem.objects.filter(name="Test Installation Labor").exists())
+
+    def test_deployment_seed_does_not_overwrite_admin_pricing_edits(self):
+        material = CostItem.objects.get(name="Banner 10oz Tarpaulin")
+        product = Product.objects.get(name="Tarpaulin")
+        component = ProductCostComponent.objects.get(product=product, cost_item=material)
+        material.unit_cost = Decimal("99.99")
+        material.save()
+        product.walk_in_rate = Decimal("999.00")
+        product.save()
+        component.usage_quantity = Decimal("2.00")
+        component.save()
+
+        call_command("seed_360ad", verbosity=0)
+        material.refresh_from_db()
+        product.refresh_from_db()
+        component.refresh_from_db()
+        self.assertEqual(material.unit_cost, Decimal("99.9900"))
+        self.assertEqual(product.walk_in_rate, Decimal("999.00"))
+        self.assertEqual(component.usage_quantity, Decimal("2.0000"))
 
     def test_admin_pages_render(self):
         quote, item = self.create_tarpaulin_quote()

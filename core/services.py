@@ -89,8 +89,11 @@ def recalculate_quotation_item(item):
 
     QuotationCostSnapshot.objects.bulk_create(snapshots)
     total_cost = money(subtotal + buffer_amount)
-    calculated_selling = money(item.pricing_quantity * item.selling_rate + item.other_charges - item.discount)
-    selling_total = max(money(item.product.minimum_price), calculated_selling, Decimal("0.00"))
+    if item.selling_price_override is not None:
+        selling_total = max(money(item.selling_price_override), Decimal("0.00"))
+    else:
+        calculated_selling = money(item.pricing_quantity * item.selling_rate + item.other_charges - item.discount)
+        selling_total = max(money(item.product.minimum_price), calculated_selling, Decimal("0.00"))
     type(item).objects.filter(pk=item.pk).update(cost_total=total_cost, selling_total=selling_total)
     item.cost_total = total_cost
     item.selling_total = selling_total

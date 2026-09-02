@@ -10,7 +10,7 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
         def cost(name, category, unit, unit_cost, supplier="", notes=""):
-            item, _ = CostItem.objects.update_or_create(
+            item, _ = CostItem.objects.get_or_create(
                 name=name,
                 defaults={
                     "category": category,
@@ -87,7 +87,7 @@ class Command(BaseCommand):
         ]
         common_area = ["ink", "electricity_area", "manpower_area", "printer", "cutter_area"]
         for name, pricing_type, walk_in, tie_up, media, extras in products:
-            product, _ = Product.objects.update_or_create(
+            product, _ = Product.objects.get_or_create(
                 name=name,
                 defaults={
                     "pricing_type": pricing_type,
@@ -99,7 +99,7 @@ class Command(BaseCommand):
             )
             recipe = [media, *extras, *common_area]
             for sequence, key in enumerate(recipe, start=1):
-                ProductCostComponent.objects.update_or_create(
+                ProductCostComponent.objects.get_or_create(
                     product=product,
                     cost_item=items[key],
                     basis=ProductCostComponent.Basis.AREA,
@@ -115,7 +115,7 @@ class Command(BaseCommand):
             ("Advertising Fan B2B", 75, 65, [("adfan_paper", "PIECE"), ("adfan_print", "PIECE"), ("adfan_cut", "PIECE"), ("adfan_lam", "PIECE"), ("adfan_handle", "PIECE"), ("adfan_pack", "PIECE")]),
         ]
         for name, walk_in, tie_up, recipe in piece_products:
-            product, _ = Product.objects.update_or_create(
+            product, _ = Product.objects.get_or_create(
                 name=name,
                 defaults={
                     "pricing_type": Product.PricingType.PIECE,
@@ -126,7 +126,7 @@ class Command(BaseCommand):
                 },
             )
             for sequence, (key, basis) in enumerate(recipe, start=1):
-                ProductCostComponent.objects.update_or_create(
+                ProductCostComponent.objects.get_or_create(
                     product=product,
                     cost_item=items[key],
                     basis=basis,
@@ -134,4 +134,4 @@ class Command(BaseCommand):
                 )
 
         Client.objects.get_or_create(name="Walk-In Customer", defaults={"notes": "General counter customer"})
-        self.stdout.write(self.style.SUCCESS("360 A.D starter data loaded."))
+        self.stdout.write(self.style.SUCCESS("360 A.D starter data ensured without overwriting existing edits."))

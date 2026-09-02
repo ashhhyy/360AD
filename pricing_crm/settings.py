@@ -75,6 +75,11 @@ TIME_ZONE = "Asia/Manila"
 USE_I18N = True
 USE_TZ = True
 
+# Existing 2026 quotations were issued outside this CRM through number 00053.
+# Other years begin at 00001 unless these values are changed in the environment.
+QUOTE_SEQUENCE_START_YEAR = int(os.environ.get("QUOTE_SEQUENCE_START_YEAR", "2026"))
+QUOTE_SEQUENCE_START_NUMBER = int(os.environ.get("QUOTE_SEQUENCE_START_NUMBER", "54"))
+
 STATIC_URL = "/static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
 STATICFILES_DIRS = [BASE_DIR / "static"]
@@ -96,3 +101,8 @@ SECURE_HSTS_INCLUDE_SUBDOMAINS = not DEBUG
 SECURE_HSTS_PRELOAD = not DEBUG
 SESSION_COOKIE_SECURE = not DEBUG
 CSRF_COOKIE_SECURE = not DEBUG
+SESSION_COOKIE_HTTPONLY = True
+SESSION_COOKIE_AGE = 28_800
+SESSION_EXPIRE_AT_BROWSER_CLOSE = True
+X_FRAME_OPTIONS = "DENY"
+SECURE_CONTENT_TYPE_NOSNIFF = True

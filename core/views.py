@@ -347,7 +347,7 @@ def quotation_export_excel(request, pk):
     summary.append(["Customer Type", quotation.get_customer_type_display(), "Status", quotation.get_status_display()])
     summary.append([])
     summary.append(
-        ["Product", "Description", "Width", "Height", "Unit", "Qty", "Area/pc", "Rate", "Cost", "Selling"]
+        ["Product", "Description", "Width", "Height", "Unit", "Qty", "Area/pc", "Rate", "Manual Override", "Cost", "Selling"]
     )
     for item in quotation.items.all():
         summary.append(
@@ -360,6 +360,7 @@ def quotation_export_excel(request, pk):
                 float(item.quantity),
                 float(item.area_per_piece),
                 float(item.selling_rate),
+                float(item.selling_price_override) if item.selling_price_override is not None else None,
                 float(item.cost_total),
                 float(item.selling_total),
             ]
@@ -380,7 +381,7 @@ def quotation_export_excel(request, pk):
     summary.freeze_panes = "A6"
     summary.column_dimensions["A"].width = 28
     summary.column_dimensions["B"].width = 28
-    for column in range(3, 11):
+    for column in range(3, 12):
         summary.column_dimensions[get_column_letter(column)].width = 14
     dark_fill = PatternFill("solid", fgColor="17324D")
     gold_fill = PatternFill("solid", fgColor="F2B134")
@@ -390,11 +391,11 @@ def quotation_export_excel(request, pk):
     for cell in summary[5]:
         cell.fill = dark_fill
         cell.font = Font(color="FFFFFF", bold=True)
-    summary.auto_filter.ref = f"A5:J{last_item_row}"
+    summary.auto_filter.ref = f"A5:K{last_item_row}"
     for row in summary.iter_rows(min_row=6, max_row=last_item_row, min_col=3, max_col=7):
         for cell in row:
             cell.number_format = '#,##0.00'
-    for row in summary.iter_rows(min_row=6, max_row=last_item_row, min_col=8, max_col=10):
+    for row in summary.iter_rows(min_row=6, max_row=last_item_row, min_col=8, max_col=11):
         for cell in row:
             cell.number_format = '₱#,##0.00'
     for row_number in range(first_total_row, last_total_row + 1):
