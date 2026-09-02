@@ -32,6 +32,9 @@ urlpatterns = [
     path("quote-items/<int:item_pk>/extra-costs/new/", views.extra_cost_create, name="extra_cost_create"),
     path("extra-costs/<int:pk>/edit/", views.extra_cost_edit, name="extra_cost_edit"),
     path("extra-costs/<int:pk>/delete/", views.extra_cost_delete, name="extra_cost_delete"),
+    path("quotations/<int:quote_pk>/additional-costs/new/", views.quotation_additional_cost_create, name="quotation_additional_cost_create"),
+    path("quotation-additional-costs/<int:pk>/edit/", views.quotation_additional_cost_edit, name="quotation_additional_cost_edit"),
+    path("quotation-additional-costs/<int:pk>/delete/", views.quotation_additional_cost_delete, name="quotation_additional_cost_delete"),
     path("quotations/<int:pk>/export.xlsx", views.quotation_export_excel, name="quotation_export_excel"),
     path("exports/master-data.xlsx", views.master_data_export_excel, name="master_data_export_excel"),
 ]

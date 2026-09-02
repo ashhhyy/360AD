@@ -10,7 +10,7 @@ from django.urls import reverse
 from openpyxl import load_workbook
 
 from .forms import CostItemForm
-from .models import Client, CostItem, Product, ProductCostComponent, Quotation, QuotationItem, QuotationItemExtraCost
+from .models import Client, CostItem, Product, ProductCostComponent, Quotation, QuotationAdditionalCost, QuotationItem, QuotationItemExtraCost
 from .services import recalculate_quotation_item
 from .templatetags.pricing_tags import number2
 
@@ -56,6 +56,7 @@ class PricingCrmTests(TestCase):
         item.refresh_from_db()
         self.assertEqual(item.selling_total, Decimal("112.50"))
         self.assertEqual(item.cost_breakdown.count(), 7)
+        self.assertEqual(item.cost_breakdown.get(name="Banner 10oz Tarpaulin").unit_label, "sq.ft.")
         self.assertEqual(item.cost_total, Decimal("38.27"))
         self.assertEqual(quote.subtotal, Decimal("112.50"))
         self.assertEqual(quote.gross_profit, Decimal("74.23"))
@@ -158,17 +159,82 @@ class PricingCrmTests(TestCase):
         item.refresh_from_db()
         self.assertEqual(item.selling_total, automatic_selling)
 
+    def test_custom_project_cost_increases_true_cost_and_reduces_gp(self):
+        quote, item = self.create_tarpaulin_quote()
+        QuotationAdditionalCost.objects.create(
+            quotation=quote,
+            name="Delivery and parking",
+            category=CostItem.Category.OTHER,
+            amount=Decimal("125.00"),
+            created_by=self.admin,
+        )
+        self.assertEqual(quote.item_cost_total, item.cost_total)
+        self.assertEqual(quote.additional_cost_total, Decimal("125.00"))
+        self.assertEqual(quote.total_cost, Decimal("163.27"))
+        self.assertEqual(quote.subtotal, Decimal("112.50"))
+        self.assertEqual(quote.gross_profit, Decimal("-50.77"))
+
+    def test_dashboard_combines_material_consumption_for_project(self):
+        quote, _ = self.create_tarpaulin_quote()
+        product = Product.objects.get(name="Tarpaulin")
+        second_item = QuotationItem.objects.create(
+            quotation=quote,
+            product=product,
+            width=Decimal("1.5"),
+            height=Decimal("3"),
+            unit=QuotationItem.Unit.FEET,
+            quantity=2,
+            selling_rate=product.walk_in_rate,
+        )
+        recalculate_quotation_item(second_item)
+        self.client.login(username="admin", password="test-password")
+        response = self.client.get(reverse("dashboard"), {"quotation": quote.pk})
+        self.assertContains(response, "Project Cost Consumption")
+        self.assertContains(response, "Banner 10oz Tarpaulin")
+        self.assertContains(response, "13.50")
+
+    def test_admin_can_add_custom_project_cost_from_dashboard(self):
+        quote, _ = self.create_tarpaulin_quote()
+        self.client.login(username="admin", password="test-password")
+        response = self.client.post(
+            reverse("quotation_additional_cost_create", args=[quote.pk]) + "?return=dashboard",
+            {
+                "name": "Courier delivery",
+                "category": CostItem.Category.OTHER,
+                "amount": "350.00",
+                "notes": "Client delivery",
+            },
+        )
+        self.assertRedirects(response, reverse("dashboard") + f"?quotation={quote.pk}")
+        cost = QuotationAdditionalCost.objects.get(quotation=quote, name="Courier delivery")
+        self.assertEqual(cost.amount, Decimal("350.00"))
+        self.assertEqual(cost.created_by, self.admin)
+
     def test_quotation_excel_contains_cost_breakdown(self):
         quote, _ = self.create_tarpaulin_quote()
+        QuotationAdditionalCost.objects.create(
+            quotation=quote,
+            name="Project delivery",
+            category=CostItem.Category.OTHER,
+            amount=Decimal("250.00"),
+            created_by=self.admin,
+        )
         self.client.login(username="admin", password="test-password")
         response = self.client.get(reverse("quotation_export_excel", args=[quote.pk]))
         self.assertEqual(response.status_code, 200)
         workbook = load_workbook(BytesIO(response.content), data_only=False)
-        self.assertEqual(workbook.sheetnames, ["Quotation", "Itemized Costs"])
+        self.assertEqual(
+            workbook.sheetnames,
+            ["Quotation", "Project Cost Summary", "Itemized Costs", "Project Additional Costs"],
+        )
         self.assertEqual(workbook["Quotation"]["I5"].value, "Manual Override")
+        project_cost_names = [cell.value for cell in workbook["Project Cost Summary"]["A"][1:]]
+        self.assertIn("Banner 10oz Tarpaulin", project_cost_names)
         self.assertEqual(workbook["Itemized Costs"]["B2"].value, "Banner 10oz Tarpaulin")
-        self.assertEqual(workbook["Itemized Costs"]["E2"].number_format, "₱#,##0.00")
-        self.assertEqual(workbook["Itemized Costs"]["F2"].number_format, "#,##0.00")
+        self.assertEqual(workbook["Itemized Costs"]["F2"].number_format, "₱#,##0.00")
+        self.assertEqual(workbook["Itemized Costs"]["G2"].number_format, "#,##0.00")
+        self.assertEqual(workbook["Project Additional Costs"]["A2"].value, "Project delivery")
+        self.assertEqual(workbook["Project Additional Costs"]["E2"].value, 250)
 
     def test_material_crud_create(self):
         self.client.login(username="admin", password="test-password")

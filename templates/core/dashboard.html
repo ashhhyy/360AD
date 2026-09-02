@@ -10,6 +10,52 @@
   <a class="kpi" href="{% url 'product_list' %}"><span>Sellable Products</span><strong>{{ product_count }}</strong></a>
   <a class="kpi" href="{% url 'cost_item_list' %}"><span>Cost Items</span><strong>{{ cost_item_count }}</strong></a>
 </section>
+<section class="panel project-cost-panel">
+  <div class="panel-head">
+    <div><h2>Project Cost Consumption</h2><p>Select a quotation/project to see the combined material consumption and true cost.</p></div>
+    {% if selected_quotation %}<a class="btn primary" href="{% url 'quotation_additional_cost_create' selected_quotation.pk %}?return=dashboard">+ Add Custom Project Cost</a>{% endif %}
+  </div>
+  {% if project_quotations %}
+  <form class="project-filter" method="get">
+    <div class="field">
+      <label for="project-quotation">Quotation / Project</label>
+      <select class="form-control" id="project-quotation" name="quotation" required>
+        {% for quote in project_quotations %}
+        <option value="{{ quote.pk }}" {% if selected_quotation.pk == quote.pk %}selected{% endif %}>{{ quote.quote_number }} — {{ quote.project_name|default:quote.client }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <button class="btn secondary" type="submit">View Project</button>
+  </form>
+
+  <div class="project-heading">
+    <div><p class="eyebrow">SELECTED PROJECT</p><h3>{{ selected_quotation.project_name|default:selected_quotation.client }}</h3><p>{{ selected_quotation.quote_number }} · {{ selected_quotation.client }}</p></div>
+    <a href="{% url 'quotation_detail' selected_quotation.pk %}">Open full quotation →</a>
+  </div>
+  <div class="kpi-grid project-cost-kpis">
+    <div class="kpi"><span>Itemized Production Cost</span><strong>₱{{ selected_quotation.item_cost_total|number2 }}</strong></div>
+    <div class="kpi"><span>Custom Project Costs</span><strong>₱{{ selected_quotation.additional_cost_total|number2 }}</strong></div>
+    <div class="kpi"><span>Total True Cost</span><strong>₱{{ selected_quotation.total_cost|number2 }}</strong></div>
+    <div class="kpi gp-kpi"><span>Gross Profit</span><strong>₱{{ selected_quotation.gross_profit|number2 }}</strong><small>{{ selected_quotation.gp_margin|number2 }}% GP margin</small></div>
+  </div>
+
+  <div class="cost-section-heading"><h3>Combined Material & Production Consumption</h3><p>Totals combine the same cost component across every sellable item in this project.</p></div>
+  <div class="table-wrap"><table><thead><tr><th>Cost Item</th><th>Category</th><th>Total Consumed</th><th>Unit</th><th>Total Cost</th></tr></thead><tbody>
+    {% for line in consumption_summary %}
+    <tr><td><strong>{{ line.name }}</strong></td><td>{{ line.category }}</td><td>{% if line.unit_label == 'cost only' %}—{% else %}{{ line.total_consumed|number2 }}{% endif %}</td><td>{{ line.unit_label }}</td><td><strong>₱{{ line.total_cost|number2 }}</strong></td></tr>
+    {% empty %}<tr><td colspan="5" class="empty">No calculated item costs yet. Add or resave a quotation item to create its cost snapshot.</td></tr>{% endfor %}
+  </tbody></table></div>
+
+  <div class="cost-section-heading custom-cost-heading"><div><h3>Custom Project Costs</h3><p>Delivery, parking, permits, outsourced labor, and other project-only expenses.</p></div><a href="{% url 'quotation_additional_cost_create' selected_quotation.pk %}?return=dashboard">+ Add cost</a></div>
+  <div class="table-wrap"><table><thead><tr><th>Cost</th><th>Category</th><th>Notes</th><th>Added By</th><th>Amount</th><th></th></tr></thead><tbody>
+    {% for cost in selected_quotation.additional_costs.all %}
+    <tr><td><strong>{{ cost.name }}</strong></td><td>{{ cost.get_category_display }}</td><td>{{ cost.notes|default:"—" }}</td><td>{{ cost.created_by.get_full_name|default:cost.created_by.username }}</td><td><strong>₱{{ cost.amount|number2 }}</strong></td><td class="actions"><a href="{% url 'quotation_additional_cost_edit' cost.pk %}?return=dashboard">Edit</a><a class="danger-link" href="{% url 'quotation_additional_cost_delete' cost.pk %}?return=dashboard">Delete</a></td></tr>
+    {% empty %}<tr><td colspan="6" class="empty">No custom project costs added.</td></tr>{% endfor %}
+  </tbody><tfoot><tr><td colspan="4">Custom Cost Total</td><td colspan="2">₱{{ selected_quotation.additional_cost_total|number2 }}</td></tr></tfoot></table></div>
+  {% else %}
+  <div class="empty-state"><h3>No project available</h3><p>Create a quotation first to track its material consumption and custom costs.</p></div>
+  {% endif %}
+</section>
 <section class="panel">
   <div class="panel-head"><div><h2>Recent quotations</h2><p>Latest saved quotation records</p></div><a href="{% url 'quotation_list' %}">View all</a></div>
   <div class="table-wrap"><table><thead><tr><th>Quote</th><th>Client</th><th>Date</th><th>Status</th><th>Selling</th><th>GP</th></tr></thead><tbody>

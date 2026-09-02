@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import Client, CostItem, Product, ProductCostComponent, Quotation, QuotationCostSnapshot, QuotationItem, QuotationItemExtraCost
+from .models import Client, CostItem, Product, ProductCostComponent, Quotation, QuotationAdditionalCost, QuotationCostSnapshot, QuotationItem, QuotationItemExtraCost
 
 
 class ProductCostComponentInline(admin.TabularInline):
@@ -27,6 +27,7 @@ admin.site.register(Client)
 admin.site.register(Quotation)
 admin.site.register(QuotationItem)
 admin.site.register(QuotationItemExtraCost)
+admin.site.register(QuotationAdditionalCost)
 admin.site.register(QuotationCostSnapshot)
 
 admin.site.site_header = "360 A.D System Administration"

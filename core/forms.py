@@ -2,7 +2,16 @@ from decimal import Decimal, InvalidOperation
 
 from django import forms
 
-from .models import Client, CostItem, Product, ProductCostComponent, Quotation, QuotationItem, QuotationItemExtraCost
+from .models import (
+    Client,
+    CostItem,
+    Product,
+    ProductCostComponent,
+    Quotation,
+    QuotationAdditionalCost,
+    QuotationItem,
+    QuotationItemExtraCost,
+)
 
 
 class TwoDecimalNumberInput(forms.NumberInput):
@@ -149,3 +158,16 @@ class QuotationItemExtraCostForm(StyledModelForm):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields["cost_item"].queryset = CostItem.objects.filter(active=True)
+
+
+class QuotationAdditionalCostForm(StyledModelForm):
+    class Meta:
+        model = QuotationAdditionalCost
+        fields = ["name", "category", "amount", "notes"]
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["name"].label = "Additional Cost Name"
+        self.fields["name"].help_text = "Example: delivery, parking, permit, outsourced labor, or rush expense."
+        self.fields["amount"].label = "Cost Amount"
+        self.fields["amount"].help_text = "This increases true cost and reduces GP; it is not added to the client selling price."

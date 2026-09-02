@@ -70,6 +70,17 @@ class CostItem(TimeStampedModel):
     class Meta:
         ordering = ["category", "name"]
 
+    @property
+    def consumption_unit(self):
+        return {
+            self.Unit.SQFT: "sq.ft.",
+            self.Unit.PIECE: "piece",
+            self.Unit.HOUR: "hour",
+            self.Unit.MINUTE: "minute",
+            self.Unit.JOB: "job / setup",
+            self.Unit.UNIT: "unit",
+        }.get(self.unit, "unit")
+
     def __str__(self):
         return self.name
 
@@ -209,8 +220,16 @@ class Quotation(TimeStampedModel):
             return super().save(*args, **kwargs)
 
     @property
-    def total_cost(self):
+    def item_cost_total(self):
         return self.items.aggregate(total=Sum("cost_total"))["total"] or ZERO
+
+    @property
+    def additional_cost_total(self):
+        return self.additional_costs.aggregate(total=Sum("amount"))["total"] or ZERO
+
+    @property
+    def total_cost(self):
+        return self.item_cost_total + self.additional_cost_total
 
     @property
     def subtotal(self):
@@ -304,11 +323,35 @@ class QuotationItemExtraCost(TimeStampedModel):
         return f"{self.quotation_item} – {self.cost_item}"
 
 
+class QuotationAdditionalCost(TimeStampedModel):
+    quotation = models.ForeignKey(Quotation, on_delete=models.CASCADE, related_name="additional_costs")
+    name = models.CharField(max_length=180)
+    category = models.CharField(max_length=20, choices=CostItem.Category.choices, default=CostItem.Category.OTHER)
+    amount = models.DecimalField(
+        max_digits=14,
+        decimal_places=2,
+        validators=[MinValueValidator(Decimal("0.01"))],
+    )
+    notes = models.CharField(max_length=240, blank=True)
+    created_by = models.ForeignKey(
+        "auth.User",
+        on_delete=models.PROTECT,
+        related_name="quotation_additional_costs",
+    )
+
+    class Meta:
+        ordering = ["id"]
+
+    def __str__(self):
+        return f"{self.quotation} – {self.name}"
+
+
 class QuotationCostSnapshot(models.Model):
     quotation_item = models.ForeignKey(QuotationItem, on_delete=models.CASCADE, related_name="cost_breakdown")
     name = models.CharField(max_length=180)
     category = models.CharField(max_length=30)
     basis = models.CharField(max_length=40)
+    unit_label = models.CharField(max_length=30, blank=True)
     unit_cost = models.DecimalField(max_digits=14, decimal_places=4)
     usage_quantity = models.DecimalField(max_digits=14, decimal_places=4)
     computed_quantity = models.DecimalField(max_digits=14, decimal_places=4)
@@ -320,3 +363,7 @@ class QuotationCostSnapshot(models.Model):
 
     def __str__(self):
         return f"{self.quotation_item}: {self.name}"
+
+    @property
+    def consumed_quantity(self):
+        return self.usage_quantity * self.computed_quantity

@@ -2,9 +2,10 @@ from io import BytesIO
 
 from django.contrib import messages
 from django.contrib.auth.decorators import user_passes_test
-from django.db.models import ProtectedError, Q
+from django.db.models import DecimalField, ExpressionWrapper, F, ProtectedError, Q, Sum
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import reverse
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
@@ -14,25 +15,65 @@ from .forms import (
     CostItemForm,
     ProductCostComponentForm,
     ProductForm,
+    QuotationAdditionalCostForm,
     QuotationForm,
     QuotationItemExtraCostForm,
     QuotationItemForm,
 )
-from .models import Client, CostItem, Product, ProductCostComponent, Quotation, QuotationItem, QuotationItemExtraCost
+from .models import (
+    Client,
+    CostItem,
+    Product,
+    ProductCostComponent,
+    Quotation,
+    QuotationAdditionalCost,
+    QuotationCostSnapshot,
+    QuotationItem,
+    QuotationItemExtraCost,
+)
 from .services import recalculate_quotation_item
 
 
 admin_required = user_passes_test(lambda user: user.is_authenticated and user.is_active and user.is_staff, login_url="login")
 
 
+def _project_consumption_summary(quotation):
+    if quotation is None:
+        return []
+    consumed_quantity = ExpressionWrapper(
+        F("usage_quantity") * F("computed_quantity"),
+        output_field=DecimalField(max_digits=28, decimal_places=4),
+    )
+    return list(
+        QuotationCostSnapshot.objects.filter(quotation_item__quotation=quotation)
+        .values("name", "category", "unit_label")
+        .annotate(
+            total_consumed=Sum(consumed_quantity),
+            total_cost=Sum("total_cost"),
+        )
+        .order_by("category", "name")
+    )
+
+
 @admin_required
 def dashboard(request):
+    project_quotations = Quotation.objects.select_related("client", "created_by").order_by("-quotation_date", "-id")
+    selected_quotation = None
+    selected_id = request.GET.get("quotation", "").strip()
+    if selected_id.isdigit():
+        selected_quotation = project_quotations.filter(pk=int(selected_id)).first()
+    if selected_quotation is None:
+        selected_quotation = project_quotations.first()
+
     context = {
         "client_count": Client.objects.filter(active=True).count(),
         "cost_item_count": CostItem.objects.filter(active=True).count(),
         "product_count": Product.objects.filter(active=True).count(),
         "quotation_count": Quotation.objects.count(),
         "recent_quotations": Quotation.objects.select_related("client", "created_by")[:8],
+        "project_quotations": project_quotations,
+        "selected_quotation": selected_quotation,
+        "consumption_summary": _project_consumption_summary(selected_quotation),
     }
     return render(request, "core/dashboard.html", context)
 
@@ -221,11 +262,15 @@ def quotation_edit(request, pk):
 def quotation_detail(request, pk):
     quotation = get_object_or_404(
         Quotation.objects.select_related("client", "created_by").prefetch_related(
-            "items__product", "items__cost_breakdown", "items__extra_costs__cost_item"
+            "items__product", "items__cost_breakdown", "items__extra_costs__cost_item", "additional_costs__created_by"
         ),
         pk=pk,
     )
-    return render(request, "core/quotations/detail.html", {"quotation": quotation})
+    return render(
+        request,
+        "core/quotations/detail.html",
+        {"quotation": quotation, "consumption_summary": _project_consumption_summary(quotation)},
+    )
 
 
 @admin_required
@@ -308,6 +353,52 @@ def extra_cost_delete(request, pk):
     return render(request, "core/confirm_delete.html", {"object": extra, "label": "Job-specific cost"})
 
 
+def _additional_cost_redirect(request, quotation_id):
+    if request.GET.get("return") == "dashboard":
+        return redirect(f"{reverse('dashboard')}?quotation={quotation_id}")
+    return redirect("quotation_detail", pk=quotation_id)
+
+
+@admin_required
+def quotation_additional_cost_create(request, quote_pk):
+    quotation = get_object_or_404(Quotation, pk=quote_pk)
+    form = QuotationAdditionalCostForm(request.POST or None)
+    if request.method == "POST" and form.is_valid():
+        cost = form.save(commit=False)
+        cost.quotation = quotation
+        cost.created_by = request.user
+        cost.save()
+        messages.success(request, "Custom project cost added and GP recalculated.")
+        return _additional_cost_redirect(request, quotation.pk)
+    return render(
+        request,
+        "core/form.html",
+        {"form": form, "title": f"Add Project Cost – {quotation.quote_number}"},
+    )
+
+
+@admin_required
+def quotation_additional_cost_edit(request, pk):
+    cost = get_object_or_404(QuotationAdditionalCost.objects.select_related("quotation"), pk=pk)
+    form = QuotationAdditionalCostForm(request.POST or None, instance=cost)
+    if request.method == "POST" and form.is_valid():
+        form.save()
+        messages.success(request, "Custom project cost updated and GP recalculated.")
+        return _additional_cost_redirect(request, cost.quotation_id)
+    return render(request, "core/form.html", {"form": form, "title": "Edit Project Cost"})
+
+
+@admin_required
+def quotation_additional_cost_delete(request, pk):
+    cost = get_object_or_404(QuotationAdditionalCost.objects.select_related("quotation"), pk=pk)
+    quotation_id = cost.quotation_id
+    if request.method == "POST":
+        cost.delete()
+        messages.success(request, "Custom project cost deleted and GP recalculated.")
+        return _additional_cost_redirect(request, quotation_id)
+    return render(request, "core/confirm_delete.html", {"object": cost, "label": "Project additional cost"})
+
+
 def _excel_response(workbook, filename):
     stream = BytesIO()
     workbook.save(stream)
@@ -336,7 +427,9 @@ def _style_sheet(sheet, widths=None):
 @admin_required
 def quotation_export_excel(request, pk):
     quotation = get_object_or_404(
-        Quotation.objects.select_related("client", "created_by").prefetch_related("items__product", "items__cost_breakdown"),
+        Quotation.objects.select_related("client", "created_by").prefetch_related(
+            "items__product", "items__cost_breakdown", "additional_costs__created_by"
+        ),
         pk=pk,
     )
     workbook = Workbook()
@@ -368,7 +461,9 @@ def quotation_export_excel(request, pk):
     last_item_row = summary.max_row
     summary.append([])
     first_total_row = summary.max_row + 1
-    summary.append(["Total Cost", float(quotation.total_cost)])
+    summary.append(["Itemized Production Cost", float(quotation.item_cost_total)])
+    summary.append(["Custom Project Costs", float(quotation.additional_cost_total)])
+    summary.append(["Total True Cost", float(quotation.total_cost)])
     summary.append(["Subtotal", float(quotation.subtotal)])
     summary.append(["Gross Profit", float(quotation.gross_profit)])
     gp_row = summary.max_row + 1
@@ -408,6 +503,24 @@ def quotation_export_excel(request, pk):
     summary.cell(gp_row, 2).number_format = "0.00%"
     summary.cell(vat_rate_row, 2).number_format = "0.00%"
 
+    project_costs = workbook.create_sheet("Project Cost Summary")
+    project_costs.append(["Cost Item", "Category", "Total Consumed", "Unit", "Total Cost"])
+    for line in _project_consumption_summary(quotation):
+        project_costs.append(
+            [
+                line["name"],
+                line["category"],
+                None if line["unit_label"] == "cost only" else float(line["total_consumed"]),
+                line["unit_label"],
+                float(line["total_cost"]),
+            ]
+        )
+    _style_sheet(project_costs, [32, 24, 18, 18, 18])
+    for cell in project_costs["C"][1:]:
+        cell.number_format = '#,##0.00'
+    for cell in project_costs["E"][1:]:
+        cell.number_format = '₱#,##0.00'
+
     costs = workbook.create_sheet("Itemized Costs")
     costs.append(
         [
@@ -415,9 +528,11 @@ def quotation_export_excel(request, pk):
             "Cost Component",
             "Category",
             "Basis",
+            "Unit",
             "Unit Cost",
-            "Usage",
-            "Computed Quantity",
+            "Usage Factor",
+            "Base Quantity",
+            "Total Consumed",
             "Total Cost",
         ]
     )
@@ -429,18 +544,37 @@ def quotation_export_excel(request, pk):
                     line.name,
                     line.category,
                     line.basis,
+                    line.unit_label,
                     float(line.unit_cost),
                     float(line.usage_quantity),
                     float(line.computed_quantity),
+                    None if line.unit_label == "cost only" else float(line.consumed_quantity),
                     float(line.total_cost),
                 ]
             )
-    _style_sheet(costs, [28, 30, 22, 24, 14, 12, 18, 16])
-    for row in costs.iter_rows(min_row=2, min_col=5, max_col=8):
+    _style_sheet(costs, [28, 30, 22, 24, 16, 14, 14, 16, 18, 16])
+    for row in costs.iter_rows(min_row=2, min_col=6, max_col=10):
         row[0].number_format = '₱#,##0.00'
         row[1].number_format = '#,##0.00'
         row[2].number_format = '#,##0.00'
-        row[3].number_format = '₱#,##0.00'
+        row[3].number_format = '#,##0.00'
+        row[4].number_format = '₱#,##0.00'
+
+    additional_costs = workbook.create_sheet("Project Additional Costs")
+    additional_costs.append(["Cost", "Category", "Notes", "Added By", "Amount"])
+    for cost in quotation.additional_costs.all():
+        additional_costs.append(
+            [
+                cost.name,
+                cost.get_category_display(),
+                cost.notes,
+                cost.created_by.get_full_name() or cost.created_by.username,
+                float(cost.amount),
+            ]
+        )
+    _style_sheet(additional_costs, [30, 24, 40, 24, 18])
+    for cell in additional_costs["E"][1:]:
+        cell.number_format = '₱#,##0.00'
 
     return _excel_response(workbook, f"{quotation.quote_number}.xlsx")
 

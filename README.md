@@ -12,6 +12,8 @@ Admin-only MVP for managing clients, materials and production costs, sellable pr
 - Saved quotation headers and line items.
 - Permanent quotation cost snapshots.
 - True cost, selling price, gross profit, GP margin, VAT, and grand total.
+- Dashboard project selector with combined material/production consumption and cost totals.
+- Project-level custom costs for delivery, parking, permits, outsourced labor, and other one-off expenses.
 - Excel export for individual quotations and all master data.
 - Starter data based on `Copy of 360AD Pricing Calculator.xlsx`.
 - SQLite locally and PostgreSQL through `DATABASE_URL` when hosted.
@@ -76,6 +78,8 @@ GP Margin % = Gross Profit ÷ Selling Price before VAT
 VAT is not included in gross profit.
 
 Administrators can optionally enter a manual selling-price override on a quotation item. The override is the final selling price before VAT and replaces the automatic rate, other charges, discount, and minimum-price calculation for that line. Leaving it blank keeps the normal automatic calculation.
+
+Custom project costs are included in total true cost and reduce gross profit. They do not increase the quotation selling price. Material consumption is calculated from each saved cost snapshot as `usage factor × base quantity`, then matching components are combined across all items in the selected quotation/project.
 
 Quotation numbering uses a database-locked yearly sequence. Existing quotation numbers are preserved. For 2026, the next available number begins at `360AD-2026-00054`; later years begin at `00001`. The start year and number can be changed with `QUOTE_SEQUENCE_START_YEAR` and `QUOTE_SEQUENCE_START_NUMBER`.
 
