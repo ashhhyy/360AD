@@ -2,7 +2,7 @@ from decimal import Decimal, ROUND_HALF_UP
 
 from django.db import transaction
 
-from .models import ProductCostComponent, QuotationCostSnapshot
+from .models import Product, ProductCostComponent, QuotationCostSnapshot
 
 
 MONEY = Decimal("0.01")
@@ -10,6 +10,99 @@ MONEY = Decimal("0.01")
 
 def money(value):
     return Decimal(value).quantize(MONEY, rounding=ROUND_HALF_UP)
+
+
+def calculate_quick_item(
+    product,
+    *,
+    customer_type,
+    width=Decimal("0"),
+    height=Decimal("0"),
+    unit="FT",
+    quantity=Decimal("1"),
+    other_charges=Decimal("0"),
+    discount=Decimal("0"),
+    selling_price_override=None,
+    extra_cost=Decimal("0"),
+):
+    """Calculate a quotation line without creating any database record."""
+    if product.pricing_type == Product.PricingType.AREA:
+        area_per_piece = width * height
+        if unit == "IN":
+            area_per_piece = area_per_piece / Decimal("144")
+        pricing_quantity = area_per_piece * quantity
+    else:
+        area_per_piece = Decimal("0")
+        pricing_quantity = quantity
+
+    breakdown = []
+    production_subtotal = Decimal("0")
+    for component in product.cost_components.select_related("cost_item").all():
+        if component.basis == ProductCostComponent.Basis.AREA:
+            computed_quantity = area_per_piece * quantity
+            basis_label = "Area × quantity"
+        elif component.basis == ProductCostComponent.Basis.PIECE:
+            computed_quantity = quantity
+            basis_label = "Quantity"
+        else:
+            computed_quantity = Decimal("1")
+            basis_label = "Fixed per job"
+
+        total = money(component.cost_item.unit_cost * component.usage_quantity * computed_quantity)
+        production_subtotal += total
+        breakdown.append(
+            {
+                "name": component.cost_item.name,
+                "basis": basis_label,
+                "consumed": component.usage_quantity * computed_quantity,
+                "unit": component.cost_item.consumption_unit,
+                "total": total,
+            }
+        )
+
+    buffer_amount = money(production_subtotal * product.buffer_percent / Decimal("100"))
+    if buffer_amount:
+        breakdown.append(
+            {
+                "name": f"Production buffer ({product.buffer_percent}%)",
+                "basis": "Percentage of itemized costs",
+                "consumed": Decimal("0"),
+                "unit": "cost only",
+                "total": buffer_amount,
+            }
+        )
+    if extra_cost:
+        breakdown.append(
+            {
+                "name": "Extra production cost",
+                "basis": "Quick estimate adjustment",
+                "consumed": Decimal("0"),
+                "unit": "cost only",
+                "total": money(extra_cost),
+            }
+        )
+
+    total_cost = money(production_subtotal + buffer_amount + extra_cost)
+    selling_rate = product.tie_up_rate if customer_type == "TIE_UP" else product.walk_in_rate
+    if selling_price_override is not None:
+        selling_total = max(money(selling_price_override), Decimal("0"))
+    else:
+        calculated_selling = money(pricing_quantity * selling_rate + other_charges - discount)
+        selling_total = max(money(product.minimum_price), calculated_selling, Decimal("0"))
+    gross_profit = money(selling_total - total_cost)
+    gp_margin = gross_profit / selling_total * Decimal("100") if selling_total else Decimal("0")
+
+    return {
+        "product": product,
+        "area_per_piece": area_per_piece,
+        "pricing_quantity": pricing_quantity,
+        "selling_rate": selling_rate,
+        "cost_total": total_cost,
+        "selling_total": selling_total,
+        "gross_profit": gross_profit,
+        "gp_margin": gp_margin,
+        "breakdown": breakdown,
+    }
 
 
 @transaction.atomic

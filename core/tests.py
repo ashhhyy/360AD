@@ -61,7 +61,7 @@ class PricingCrmTests(TestCase):
         self.assertEqual(quote.subtotal, Decimal("112.50"))
         self.assertEqual(quote.gross_profit, Decimal("74.23"))
 
-    def test_quotation_sequence_preserves_old_numbers_and_starts_at_54(self):
+    def test_quotation_sequence_preserves_old_numbers_and_starts_at_55(self):
         client = Client.objects.get(name="Walk-In Customer")
         old_one = Quotation.objects.create(
             quote_number="360AD-2026-00001",
@@ -96,9 +96,34 @@ class PricingCrmTests(TestCase):
         old_two.refresh_from_db()
         self.assertEqual(old_one.quote_number, "360AD-2026-00001")
         self.assertEqual(old_two.quote_number, "360AD-2026-00002")
-        self.assertEqual(first_live.quote_number, "360AD-2026-00054")
-        self.assertEqual(second_live.quote_number, "360AD-2026-00055")
+        self.assertEqual(first_live.quote_number, "360AD-2026-00055")
+        self.assertEqual(second_live.quote_number, "360AD-2026-00056")
         self.assertEqual(next_year.quote_number, "360AD-2027-00001")
+
+    def test_deleted_draft_number_is_reused_but_issued_quote_cannot_be_deleted(self):
+        client = Client.objects.get(name="Walk-In Customer")
+        first = Quotation.objects.create(
+            quotation_date=date(2026, 9, 2), client=client, created_by=self.admin
+        )
+        second = Quotation.objects.create(
+            quotation_date=date(2026, 9, 2), client=client, created_by=self.admin
+        )
+        self.assertEqual(first.quote_number, "360AD-2026-00055")
+        self.assertEqual(second.quote_number, "360AD-2026-00056")
+
+        self.client.login(username="admin", password="test-password")
+        response = self.client.post(reverse("quotation_delete", args=[first.pk]))
+        self.assertRedirects(response, reverse("quotation_list"))
+        replacement = Quotation.objects.create(
+            quotation_date=date(2026, 9, 2), client=client, created_by=self.admin
+        )
+        self.assertEqual(replacement.quote_number, "360AD-2026-00055")
+
+        second.status = Quotation.Status.APPROVED
+        second.save()
+        response = self.client.post(reverse("quotation_delete", args=[second.pk]))
+        self.assertRedirects(response, reverse("quotation_detail", args=[second.pk]))
+        self.assertTrue(Quotation.objects.filter(pk=second.pk).exists())
 
     def test_saved_snapshot_does_not_change_with_material_rate(self):
         _, item = self.create_tarpaulin_quote()
@@ -235,6 +260,63 @@ class PricingCrmTests(TestCase):
         self.assertEqual(workbook["Itemized Costs"]["G2"].number_format, "#,##0.00")
         self.assertEqual(workbook["Project Additional Costs"]["A2"].value, "Project delivery")
         self.assertEqual(workbook["Project Additional Costs"]["E2"].value, 250)
+
+    def test_export_all_quotations_contains_relevant_summary_sheets(self):
+        quote, item = self.create_tarpaulin_quote()
+        quote.status = Quotation.Status.APPROVED
+        quote.save()
+        QuotationAdditionalCost.objects.create(
+            quotation=quote,
+            name="Delivery",
+            category=CostItem.Category.OTHER,
+            amount=Decimal("50.00"),
+            created_by=self.admin,
+        )
+        self.client.login(username="admin", password="test-password")
+        response = self.client.get(reverse("quotations_export_all_excel"))
+        self.assertEqual(response.status_code, 200)
+        workbook = load_workbook(BytesIO(response.content), data_only=False)
+        self.assertEqual(
+            workbook.sheetnames,
+            [
+                "Quotation Summary",
+                "Item Details",
+                "Cost Breakdown",
+                "Project Additional Costs",
+                "Monthly Summary",
+            ],
+        )
+        self.assertEqual(workbook["Quotation Summary"]["A2"].value, quote.quote_number)
+        self.assertEqual(workbook["Quotation Summary"]["L2"].value, float(item.cost_total + Decimal("50.00")))
+        self.assertEqual(workbook["Item Details"]["F2"].value, "Tarpaulin")
+        self.assertEqual(workbook["Project Additional Costs"]["D2"].value, "Delivery")
+        self.assertEqual(workbook["Monthly Summary"]["D2"].value, 1)
+
+    def test_quick_calculator_matches_saved_item_without_saving_quote(self):
+        self.client.login(username="admin", password="test-password")
+        product = Product.objects.get(name="Tarpaulin")
+        before_count = Quotation.objects.count()
+        response = self.client.post(
+            reverse("quick_calculator_preview"),
+            data={
+                "product_id": product.pk,
+                "customer_type": Quotation.CustomerType.WALK_IN,
+                "width": "1.5",
+                "height": "3",
+                "unit": QuotationItem.Unit.FEET,
+                "quantity": "1",
+                "extra_cost": "0",
+                "other_charges": "0",
+                "discount": "0",
+                "selling_price_override": "",
+            },
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(Decimal(str(payload["cost_total"])), Decimal("38.27"))
+        self.assertEqual(Decimal(str(payload["selling_total"])), Decimal("112.50"))
+        self.assertEqual(Quotation.objects.count(), before_count)
 
     def test_material_crud_create(self):
         self.client.login(username="admin", password="test-password")

@@ -1,6 +1,6 @@
 {% extends "base.html" %}{% load pricing_tags %}
 {% block content %}
-<div class="page-heading"><div><p class="eyebrow">ADMIN QUOTATIONS</p><h1>Quotations</h1><p>Saved costing and selling records.</p></div><a class="btn primary" href="{% url 'quotation_create' %}">+ New Quotation</a></div>
+<div class="page-heading"><div><p class="eyebrow">ADMIN QUOTATIONS</p><h1>Quotations</h1><p>Saved costing and selling records.</p></div><div class="heading-actions"><a class="btn secondary" href="{% url 'quotations_export_all_excel' %}">Export All Excel</a><a class="btn primary" href="{% url 'quotation_create' %}">+ New Quotation</a></div></div>
 <section class="panel">
   <form class="search-row"><input name="q" value="{{ query }}" placeholder="Search quotation or client"><button class="btn secondary">Search</button></form>
   <div class="table-wrap"><table><thead><tr><th>Quotation</th><th>Client</th><th>Project</th><th>Date</th><th>Status</th><th>Cost</th><th>Selling</th><th>GP</th><th></th></tr></thead><tbody>

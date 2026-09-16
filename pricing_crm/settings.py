@@ -75,10 +75,11 @@ TIME_ZONE = "Asia/Manila"
 USE_I18N = True
 USE_TZ = True
 
-# Existing 2026 quotations were issued outside this CRM through number 00053.
+# Existing 2026 quotations were issued outside this CRM through number 00054.
 # Other years begin at 00001 unless these values are changed in the environment.
 QUOTE_SEQUENCE_START_YEAR = int(os.environ.get("QUOTE_SEQUENCE_START_YEAR", "2026"))
-QUOTE_SEQUENCE_START_NUMBER = int(os.environ.get("QUOTE_SEQUENCE_START_NUMBER", "54"))
+QUOTE_SEQUENCE_START_NUMBER = int(os.environ.get("QUOTE_SEQUENCE_START_NUMBER", "55"))
+QUOTE_RESERVED_THROUGH_NUMBER = int(os.environ.get("QUOTE_RESERVED_THROUGH_NUMBER", "54"))
 
 STATIC_URL = "/static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"

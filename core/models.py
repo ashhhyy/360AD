@@ -151,9 +151,25 @@ class QuotationSequence(models.Model):
         return f"{self.year}: next {self.next_number:05d}"
 
 
+class ReusableQuotationNumber(models.Model):
+    year = models.PositiveIntegerField()
+    number = models.PositiveIntegerField()
+    released_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["year", "number"]
+        constraints = [
+            models.UniqueConstraint(fields=["year", "number"], name="unique_reusable_quotation_number")
+        ]
+
+    def __str__(self):
+        return f"360AD-{self.year}-{self.number:05d}"
+
+
 class Quotation(TimeStampedModel):
     class Status(models.TextChoices):
         DRAFT = "DRAFT", "Draft"
+        TEST = "TEST", "Test"
         APPROVED = "APPROVED", "Approved"
         SENT = "SENT", "Sent"
         ACCEPTED = "ACCEPTED", "Accepted"
@@ -181,7 +197,10 @@ class Quotation(TimeStampedModel):
     @classmethod
     def _configured_start_number(cls, year):
         if year == settings.QUOTE_SEQUENCE_START_YEAR:
-            return settings.QUOTE_SEQUENCE_START_NUMBER
+            return max(
+                settings.QUOTE_SEQUENCE_START_NUMBER,
+                settings.QUOTE_RESERVED_THROUGH_NUMBER + 1,
+            )
         return 1
 
     @classmethod
@@ -191,24 +210,62 @@ class Quotation(TimeStampedModel):
             year=year,
             defaults={"next_number": configured_start},
         )
-        next_number = sequence.next_number
+        prefix = f"360AD-{year}-"
+        existing_numbers = set()
+        for quote_number in cls.objects.filter(quote_number__startswith=prefix).values_list(
+            "quote_number", flat=True
+        ):
+            try:
+                existing_numbers.add(int(quote_number.rsplit("-", 1)[1]))
+            except (IndexError, TypeError, ValueError):
+                continue
 
-        if created:
-            prefix = f"360AD-{year}-"
-            existing_numbers = []
-            for quote_number in cls.objects.filter(quote_number__startswith=prefix).values_list(
-                "quote_number", flat=True
-            ):
-                try:
-                    existing_numbers.append(int(quote_number.rsplit("-", 1)[1]))
-                except (IndexError, TypeError, ValueError):
-                    continue
-            if existing_numbers:
-                next_number = max(configured_start, max(existing_numbers) + 1)
+        reusable_numbers = list(
+            ReusableQuotationNumber.objects.select_for_update()
+            .filter(year=year, number__gte=configured_start)
+            .order_by("number")
+        )
+        next_number = None
+        for reusable in reusable_numbers:
+            reusable_number = reusable.number
+            reusable.delete()
+            if reusable_number not in existing_numbers:
+                next_number = reusable_number
+                break
 
-        sequence.next_number = next_number + 1
+        if next_number is None:
+            next_number = max(sequence.next_number, configured_start)
+            while next_number in existing_numbers:
+                next_number += 1
+            sequence.next_number = next_number + 1
+        elif sequence.next_number <= next_number:
+            sequence.next_number = next_number + 1
+
         sequence.save(update_fields=["next_number", "updated_at"])
         return next_number
+
+    @property
+    def number_can_be_reused(self):
+        return self.status in {self.Status.DRAFT, self.Status.TEST}
+
+    def _number_parts(self):
+        try:
+            prefix, year, number = self.quote_number.rsplit("-", 2)
+            if prefix != "360AD":
+                return None
+            return int(year), int(number)
+        except (AttributeError, TypeError, ValueError):
+            return None
+
+    def delete(self, *args, **kwargs):
+        number_parts = self._number_parts() if self.number_can_be_reused else None
+        with transaction.atomic():
+            result = super().delete(*args, **kwargs)
+            if number_parts:
+                year, number = number_parts
+                if number >= self._configured_start_number(year):
+                    ReusableQuotationNumber.objects.get_or_create(year=year, number=number)
+            return result
 
     def save(self, *args, **kwargs):
         if self.quote_number:

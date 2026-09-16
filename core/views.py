@@ -1,11 +1,16 @@
+import json
+from collections import defaultdict
+from decimal import Decimal, InvalidOperation
 from io import BytesIO
 
 from django.contrib import messages
 from django.contrib.auth.decorators import user_passes_test
+from django.db import transaction
 from django.db.models import DecimalField, ExpressionWrapper, F, ProtectedError, Q, Sum
-from django.http import HttpResponse
+from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
+from django.views.decorators.http import require_POST
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
@@ -31,7 +36,7 @@ from .models import (
     QuotationItem,
     QuotationItemExtraCost,
 )
-from .services import recalculate_quotation_item
+from .services import calculate_quick_item, recalculate_quotation_item
 
 
 admin_required = user_passes_test(lambda user: user.is_authenticated and user.is_active and user.is_staff, login_url="login")
@@ -74,8 +79,83 @@ def dashboard(request):
         "project_quotations": project_quotations,
         "selected_quotation": selected_quotation,
         "consumption_summary": _project_consumption_summary(selected_quotation),
+        "quick_products": Product.objects.filter(active=True).order_by("name"),
     }
     return render(request, "core/dashboard.html", context)
+
+
+def _decimal_from_payload(payload, key, default="0", *, allow_blank=True):
+    value = payload.get(key, default)
+    if value in (None, "") and allow_blank:
+        return Decimal(default)
+    try:
+        return Decimal(str(value))
+    except (InvalidOperation, TypeError, ValueError) as exc:
+        raise ValueError(f"{key.replace('_', ' ').title()} must be a valid number.") from exc
+
+
+@admin_required
+@require_POST
+def quick_calculator_preview(request):
+    try:
+        payload = json.loads(request.body or "{}")
+        product = Product.objects.prefetch_related("cost_components__cost_item").get(
+            pk=int(payload.get("product_id")), active=True
+        )
+        quantity = _decimal_from_payload(payload, "quantity", "1")
+        width = _decimal_from_payload(payload, "width")
+        height = _decimal_from_payload(payload, "height")
+        other_charges = _decimal_from_payload(payload, "other_charges")
+        discount = _decimal_from_payload(payload, "discount")
+        extra_cost = _decimal_from_payload(payload, "extra_cost")
+        override_value = payload.get("selling_price_override")
+        selling_override = None if override_value in (None, "") else _decimal_from_payload(
+            payload, "selling_price_override"
+        )
+        if quantity <= 0:
+            raise ValueError("Quantity must be greater than zero.")
+        if product.pricing_type == Product.PricingType.AREA and (width <= 0 or height <= 0):
+            raise ValueError("Width and height are required for area-based products.")
+        if min(other_charges, discount, extra_cost) < 0 or (selling_override is not None and selling_override < 0):
+            raise ValueError("Charges, discounts, extra cost, and overrides cannot be negative.")
+
+        calculation = calculate_quick_item(
+            product,
+            customer_type=payload.get("customer_type", Quotation.CustomerType.WALK_IN),
+            width=width,
+            height=height,
+            unit=payload.get("unit", QuotationItem.Unit.FEET),
+            quantity=quantity,
+            other_charges=other_charges,
+            discount=discount,
+            selling_price_override=selling_override,
+            extra_cost=extra_cost,
+        )
+        return JsonResponse(
+            {
+                "product": product.name,
+                "pricing_type": product.pricing_type,
+                "pricing_quantity": float(calculation["pricing_quantity"]),
+                "selling_rate": float(calculation["selling_rate"]),
+                "cost_total": float(calculation["cost_total"]),
+                "selling_total": float(calculation["selling_total"]),
+                "gross_profit": float(calculation["gross_profit"]),
+                "gp_margin": float(calculation["gp_margin"]),
+                "breakdown": [
+                    {
+                        "name": line["name"],
+                        "basis": line["basis"],
+                        "consumed": float(line["consumed"]),
+                        "unit": line["unit"],
+                        "total": float(line["total"]),
+                    }
+                    for line in calculation["breakdown"]
+                ],
+            }
+        )
+    except (Product.DoesNotExist, TypeError, ValueError, json.JSONDecodeError) as exc:
+        message = "Please select a valid product." if isinstance(exc, (Product.DoesNotExist, TypeError)) else str(exc)
+        return JsonResponse({"error": message}, status=400)
 
 
 def _save_form(request, form_class, template, redirect_name, instance=None, title="", success="Saved successfully."):
@@ -275,7 +355,20 @@ def quotation_detail(request, pk):
 
 @admin_required
 def quotation_delete(request, pk):
-    return _delete_object(request, get_object_or_404(Quotation, pk=pk), "quotation_list", "Quotation")
+    quotation = get_object_or_404(Quotation, pk=pk)
+    if not quotation.number_can_be_reused:
+        messages.error(
+            request,
+            "Only Draft or Test quotations can be deleted. Change issued quotations to Rejected or Expired instead.",
+        )
+        return redirect("quotation_detail", pk=quotation.pk)
+    if request.method == "POST":
+        released_number = quotation.quote_number
+        with transaction.atomic():
+            quotation.delete()
+        messages.success(request, f"Draft/Test quotation deleted. {released_number} is available for reuse.")
+        return redirect("quotation_list")
+    return render(request, "core/confirm_delete.html", {"object": quotation, "label": "Draft/Test quotation"})
 
 
 @admin_required
@@ -422,6 +515,30 @@ def _style_sheet(sheet, widths=None):
     sheet.auto_filter.ref = sheet.dimensions
     for index, width in enumerate(widths or [], start=1):
         sheet.column_dimensions[get_column_letter(index)].width = width
+
+
+def _prefetched_quotation_totals(quotation):
+    items = list(quotation.items.all())
+    additional_costs = list(quotation.additional_costs.all())
+    item_cost = sum((item.cost_total for item in items), Decimal("0"))
+    additional_cost = sum((cost.amount for cost in additional_costs), Decimal("0"))
+    subtotal = sum((item.selling_total for item in items), Decimal("0"))
+    true_cost = item_cost + additional_cost
+    vat_amount = (subtotal * quotation.vat_percent / Decimal("100")).quantize(Decimal("0.01"))
+    gross_profit = subtotal - true_cost
+    gp_margin = gross_profit / subtotal * Decimal("100") if subtotal else Decimal("0")
+    return {
+        "items": items,
+        "additional_costs": additional_costs,
+        "item_cost": item_cost,
+        "additional_cost": additional_cost,
+        "true_cost": true_cost,
+        "subtotal": subtotal,
+        "vat_amount": vat_amount,
+        "grand_total": subtotal + vat_amount,
+        "gross_profit": gross_profit,
+        "gp_margin": gp_margin,
+    }
 
 
 @admin_required
@@ -577,6 +694,247 @@ def quotation_export_excel(request, pk):
         cell.number_format = '₱#,##0.00'
 
     return _excel_response(workbook, f"{quotation.quote_number}.xlsx")
+
+
+@admin_required
+def quotations_export_all_excel(request):
+    quotations = list(
+        Quotation.objects.select_related("client", "created_by")
+        .prefetch_related("items__product", "items__cost_breakdown", "additional_costs__created_by")
+        .order_by("quotation_date", "quote_number")
+    )
+    workbook = Workbook()
+    summary = workbook.active
+    summary.title = "Quotation Summary"
+    summary.append(
+        [
+            "Quotation No.",
+            "Date",
+            "Status",
+            "Client",
+            "Company",
+            "Project",
+            "Customer Type",
+            "Prepared By",
+            "Items",
+            "Production Cost",
+            "Additional Cost",
+            "True Cost",
+            "Selling Before VAT",
+            "Gross Profit",
+            "GP Margin",
+            "VAT Rate",
+            "VAT Amount",
+            "Grand Total",
+        ]
+    )
+    item_details = workbook.create_sheet("Item Details")
+    item_details.append(
+        [
+            "Quotation No.",
+            "Status",
+            "Date",
+            "Client",
+            "Project",
+            "Product",
+            "Description",
+            "Width",
+            "Height",
+            "Unit",
+            "Quantity",
+            "Area / Piece",
+            "Pricing Quantity",
+            "Rate",
+            "Manual Override",
+            "Line Cost",
+            "Line Selling",
+            "Line GP",
+        ]
+    )
+    costs = workbook.create_sheet("Cost Breakdown")
+    costs.append(
+        [
+            "Quotation No.",
+            "Product",
+            "Cost Component",
+            "Category",
+            "Basis",
+            "Unit",
+            "Unit Cost",
+            "Usage Factor",
+            "Base Quantity",
+            "Total Consumed",
+            "Total Cost",
+        ]
+    )
+    additional_costs_sheet = workbook.create_sheet("Project Additional Costs")
+    additional_costs_sheet.append(
+        ["Quotation No.", "Client", "Project", "Cost", "Category", "Notes", "Added By", "Amount"]
+    )
+    monthly_data = defaultdict(
+        lambda: {
+            "quotation_count": 0,
+            "draft_test_count": 0,
+            "approved_count": 0,
+            "approved_sales": Decimal("0"),
+            "approved_cost": Decimal("0"),
+            "approved_gp": Decimal("0"),
+        }
+    )
+    approved_statuses = {Quotation.Status.APPROVED, Quotation.Status.ACCEPTED}
+
+    for quotation in quotations:
+        totals = _prefetched_quotation_totals(quotation)
+        prepared_by = quotation.created_by.get_full_name() or quotation.created_by.username
+        summary.append(
+            [
+                quotation.quote_number,
+                quotation.quotation_date,
+                quotation.get_status_display(),
+                quotation.client.name,
+                quotation.client.company,
+                quotation.project_name,
+                quotation.get_customer_type_display(),
+                prepared_by,
+                len(totals["items"]),
+                float(totals["item_cost"]),
+                float(totals["additional_cost"]),
+                float(totals["true_cost"]),
+                float(totals["subtotal"]),
+                float(totals["gross_profit"]),
+                float(totals["gp_margin"]) / 100,
+                float(quotation.vat_percent) / 100,
+                float(totals["vat_amount"]),
+                float(totals["grand_total"]),
+            ]
+        )
+        for item in totals["items"]:
+            item_details.append(
+                [
+                    quotation.quote_number,
+                    quotation.get_status_display(),
+                    quotation.quotation_date,
+                    str(quotation.client),
+                    quotation.project_name,
+                    item.product.name,
+                    item.description,
+                    float(item.width) if item.width is not None else None,
+                    float(item.height) if item.height is not None else None,
+                    item.get_unit_display(),
+                    float(item.quantity),
+                    float(item.area_per_piece),
+                    float(item.pricing_quantity),
+                    float(item.selling_rate),
+                    float(item.selling_price_override) if item.selling_price_override is not None else None,
+                    float(item.cost_total),
+                    float(item.selling_total),
+                    float(item.selling_total - item.cost_total),
+                ]
+            )
+            for line in item.cost_breakdown.all():
+                costs.append(
+                    [
+                        quotation.quote_number,
+                        item.product.name,
+                        line.name,
+                        line.category,
+                        line.basis,
+                        line.unit_label,
+                        float(line.unit_cost),
+                        float(line.usage_quantity),
+                        float(line.computed_quantity),
+                        None if line.unit_label == "cost only" else float(line.consumed_quantity),
+                        float(line.total_cost),
+                    ]
+                )
+        for cost in totals["additional_costs"]:
+            additional_costs_sheet.append(
+                [
+                    quotation.quote_number,
+                    str(quotation.client),
+                    quotation.project_name,
+                    cost.name,
+                    cost.get_category_display(),
+                    cost.notes,
+                    cost.created_by.get_full_name() or cost.created_by.username,
+                    float(cost.amount),
+                ]
+            )
+
+        month = quotation.quotation_date.strftime("%Y-%m")
+        monthly_data[month]["quotation_count"] += 1
+        if quotation.status in {Quotation.Status.DRAFT, Quotation.Status.TEST}:
+            monthly_data[month]["draft_test_count"] += 1
+        if quotation.status in approved_statuses:
+            monthly_data[month]["approved_count"] += 1
+            monthly_data[month]["approved_sales"] += totals["subtotal"]
+            monthly_data[month]["approved_cost"] += totals["true_cost"]
+            monthly_data[month]["approved_gp"] += totals["gross_profit"]
+
+    monthly = workbook.create_sheet("Monthly Summary")
+    monthly.append(
+        [
+            "Month",
+            "All Quotations",
+            "Draft / Test",
+            "Approved / Accepted",
+            "Approved Sales",
+            "Approved True Cost",
+            "Approved Gross Profit",
+            "Approved GP Margin",
+        ]
+    )
+    for month, values in sorted(monthly_data.items()):
+        approved_margin = (
+            values["approved_gp"] / values["approved_sales"] if values["approved_sales"] else Decimal("0")
+        )
+        monthly.append(
+            [
+                month,
+                values["quotation_count"],
+                values["draft_test_count"],
+                values["approved_count"],
+                float(values["approved_sales"]),
+                float(values["approved_cost"]),
+                float(values["approved_gp"]),
+                float(approved_margin),
+            ]
+        )
+
+    _style_sheet(summary, [22, 13, 14, 24, 24, 30, 16, 20, 10, 17, 17, 17, 20, 17, 14, 12, 15, 17])
+    _style_sheet(item_details, [22, 14, 13, 24, 28, 28, 36, 11, 11, 11, 12, 14, 16, 14, 17, 15, 15, 15])
+    _style_sheet(costs, [22, 28, 30, 22, 24, 16, 14, 14, 15, 16, 15])
+    _style_sheet(additional_costs_sheet, [22, 24, 28, 28, 22, 36, 20, 15])
+    _style_sheet(monthly, [14, 16, 14, 20, 18, 20, 22, 20])
+
+    for row in summary.iter_rows(min_row=2, min_col=10, max_col=14):
+        for cell in row:
+            cell.number_format = '₱#,##0.00'
+    for row in summary.iter_rows(min_row=2, min_col=17, max_col=18):
+        for cell in row:
+            cell.number_format = '₱#,##0.00'
+    for cell in summary["O"][1:]:
+        cell.number_format = "0.00%"
+    for cell in summary["P"][1:]:
+        cell.number_format = "0.00%"
+    for row in item_details.iter_rows(min_row=2, min_col=8, max_col=13):
+        for cell in row:
+            cell.number_format = '#,##0.00'
+    for row in item_details.iter_rows(min_row=2, min_col=14, max_col=18):
+        for cell in row:
+            cell.number_format = '₱#,##0.00'
+    for row in costs.iter_rows(min_row=2, min_col=7, max_col=11):
+        for cell in row:
+            cell.number_format = '₱#,##0.00' if cell.column in {7, 11} else '#,##0.00'
+    for cell in additional_costs_sheet["H"][1:]:
+        cell.number_format = '₱#,##0.00'
+    for row in monthly.iter_rows(min_row=2, min_col=5, max_col=7):
+        for cell in row:
+            cell.number_format = '₱#,##0.00'
+    for cell in monthly["H"][1:]:
+        cell.number_format = "0.00%"
+
+    return _excel_response(workbook, "360AD-all-quotations.xlsx")
 
 
 @admin_required

@@ -5,6 +5,7 @@ from . import views
 
 urlpatterns = [
     path("", views.dashboard, name="dashboard"),
+    path("api/quick-calculator/", views.quick_calculator_preview, name="quick_calculator_preview"),
     path("clients/", views.client_list, name="client_list"),
     path("clients/new/", views.client_create, name="client_create"),
     path("clients/<int:pk>/edit/", views.client_edit, name="client_edit"),
@@ -36,5 +37,6 @@ urlpatterns = [
     path("quotation-additional-costs/<int:pk>/edit/", views.quotation_additional_cost_edit, name="quotation_additional_cost_edit"),
     path("quotation-additional-costs/<int:pk>/delete/", views.quotation_additional_cost_delete, name="quotation_additional_cost_delete"),
     path("quotations/<int:pk>/export.xlsx", views.quotation_export_excel, name="quotation_export_excel"),
+    path("exports/quotations.xlsx", views.quotations_export_all_excel, name="quotations_export_all_excel"),
     path("exports/master-data.xlsx", views.master_data_export_excel, name="master_data_export_excel"),
 ]

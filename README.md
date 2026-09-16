@@ -14,7 +14,9 @@ Admin-only MVP for managing clients, materials and production costs, sellable pr
 - True cost, selling price, gross profit, GP margin, VAT, and grand total.
 - Dashboard project selector with combined material/production consumption and cost totals.
 - Project-level custom costs for delivery, parking, permits, outsourced labor, and other one-off expenses.
-- Excel export for individual quotations and all master data.
+- Excel export for individual quotations, all quotations in one workbook, and all master data.
+- Dashboard quick calculator for multi-item estimates that are never saved as quotations.
+- Reusable numbers for deleted Draft/Test quotations while issued numbers remain protected.
 - Starter data based on `Copy of 360AD Pricing Calculator.xlsx`.
 - SQLite locally and PostgreSQL through `DATABASE_URL` when hosted.
 
@@ -81,7 +83,7 @@ Administrators can optionally enter a manual selling-price override on a quotati
 
 Custom project costs are included in total true cost and reduce gross profit. They do not increase the quotation selling price. Material consumption is calculated from each saved cost snapshot as `usage factor × base quantity`, then matching components are combined across all items in the selected quotation/project.
 
-Quotation numbering uses a database-locked yearly sequence. Existing quotation numbers are preserved. For 2026, the next available number begins at `360AD-2026-00054`; later years begin at `00001`. The start year and number can be changed with `QUOTE_SEQUENCE_START_YEAR` and `QUOTE_SEQUENCE_START_NUMBER`.
+Quotation numbering uses a database-locked yearly sequence. Existing quotation numbers `360AD-2026-00001` through `00054` are permanently reserved, and new 2026 quotations begin at `00055`. Deleting a Draft or Test quotation releases only that number for safe reuse; issued statuses cannot be deleted from the CRM. Later years begin at `00001`. The sequence settings can be changed with `QUOTE_SEQUENCE_START_YEAR`, `QUOTE_SEQUENCE_START_NUMBER`, and `QUOTE_RESERVED_THROUGH_NUMBER`.
 
 ## Important pricing review
 

@@ -1,4 +1,4 @@
-{% extends "base.html" %}{% load pricing_tags %}
+{% extends "base.html" %}{% load pricing_tags static %}
 {% block content %}
 <div class="page-heading">
   <div><p class="eyebrow">ADMIN CONTROL CENTER</p><h1>Dashboard</h1><p>Manage pricing, cost recipes, clients, and quotations.</p></div>
@@ -9,6 +9,77 @@
   <a class="kpi" href="{% url 'client_list' %}"><span>Active Clients</span><strong>{{ client_count }}</strong></a>
   <a class="kpi" href="{% url 'product_list' %}"><span>Sellable Products</span><strong>{{ product_count }}</strong></a>
   <a class="kpi" href="{% url 'cost_item_list' %}"><span>Cost Items</span><strong>{{ cost_item_count }}</strong></a>
+</section>
+<section class="panel quick-calculator" data-preview-url="{% url 'quick_calculator_preview' %}">
+  <div class="panel-head">
+    <div><p class="eyebrow">NO-SAVE ESTIMATE</p><h2>Quick Item Calculator</h2><p>Price uncertain jobs without creating a quotation. Add several items and clear them when finished.</p></div>
+    <button class="btn secondary" id="qc-clear" type="button">Clear Estimate</button>
+  </div>
+  <form id="qc-form" class="quick-calc-form">
+    {% csrf_token %}
+    <div class="field quick-product-field">
+      <label for="qc-product">Product</label>
+      <select class="form-control" id="qc-product" required>
+        <option value="">Select a product</option>
+        {% for product in quick_products %}<option value="{{ product.pk }}" data-pricing-type="{{ product.pricing_type }}">{{ product.name }}</option>{% endfor %}
+      </select>
+    </div>
+    <div class="field">
+      <label for="qc-description">Description</label>
+      <input class="form-control" id="qc-description" placeholder="Optional job details">
+    </div>
+    <div class="field">
+      <label for="qc-customer-type">Customer Type</label>
+      <select class="form-control" id="qc-customer-type"><option value="WALK_IN">Walk-In</option><option value="TIE_UP">Tie-Up</option></select>
+    </div>
+    <div class="field qc-dimension">
+      <label for="qc-width">Width</label>
+      <input class="form-control" id="qc-width" type="number" min="0" step="0.01" inputmode="decimal">
+    </div>
+    <div class="field qc-dimension">
+      <label for="qc-height">Height</label>
+      <input class="form-control" id="qc-height" type="number" min="0" step="0.01" inputmode="decimal">
+    </div>
+    <div class="field qc-dimension">
+      <label for="qc-unit">Dimension Unit</label>
+      <select class="form-control" id="qc-unit"><option value="FT">Feet</option><option value="IN">Inches</option></select>
+    </div>
+    <div class="field">
+      <label for="qc-quantity">Quantity</label>
+      <input class="form-control" id="qc-quantity" type="number" min="0.01" step="0.01" value="1" required inputmode="decimal">
+    </div>
+    <div class="field">
+      <label for="qc-extra-cost">Extra Production Cost</label>
+      <input class="form-control" id="qc-extra-cost" type="number" min="0" step="0.01" value="0" inputmode="decimal">
+    </div>
+    <div class="field">
+      <label for="qc-other-charges">Other Selling Charges</label>
+      <input class="form-control" id="qc-other-charges" type="number" min="0" step="0.01" value="0" inputmode="decimal">
+    </div>
+    <div class="field">
+      <label for="qc-discount">Discount</label>
+      <input class="form-control" id="qc-discount" type="number" min="0" step="0.01" value="0" inputmode="decimal">
+    </div>
+    <div class="field">
+      <label for="qc-override">Manual Selling Override</label>
+      <input class="form-control" id="qc-override" type="number" min="0" step="0.01" placeholder="Leave blank for automatic" inputmode="decimal">
+    </div>
+    <div class="field">
+      <label for="qc-vat">VAT %</label>
+      <input class="form-control" id="qc-vat" type="number" min="0" step="0.01" value="0" inputmode="decimal">
+    </div>
+    <div class="quick-calc-action"><button class="btn primary" type="submit">Calculate & Add Item</button></div>
+  </form>
+  <div class="alert error quick-calc-error" id="qc-error" hidden></div>
+  <div class="table-wrap quick-estimate-table">
+    <table><thead><tr><th>Item</th><th>Details</th><th>Cost</th><th>Selling</th><th>Gross Profit</th><th></th></tr></thead><tbody id="qc-items"><tr class="qc-empty-row"><td colspan="6" class="empty">No quick-estimate items yet.</td></tr></tbody></table>
+  </div>
+  <div class="quick-totals">
+    <div><span>Estimated True Cost</span><strong id="qc-total-cost">₱0.00</strong></div>
+    <div><span>Selling Before VAT</span><strong id="qc-subtotal">₱0.00</strong></div>
+    <div><span>Gross Profit</span><strong id="qc-profit">₱0.00</strong><small id="qc-margin">0.00% GP margin</small></div>
+    <div class="quick-grand"><span>Estimated Grand Total</span><strong id="qc-grand-total">₱0.00</strong><small id="qc-vat-amount">VAT: ₱0.00</small></div>
+  </div>
 </section>
 <section class="panel project-cost-panel">
   <div class="panel-head">
@@ -65,3 +136,4 @@
   </tbody></table></div>
 </section>
 {% endblock %}
+{% block extra_js %}<script src="{% static 'core/quick-calculator.js' %}" defer></script>{% endblock %}
