@@ -4,15 +4,19 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#10263b">
   <title>{% block title %}360 A.D Pricing CRM{% endblock %}</title>
+  <link rel="icon" type="image/png" sizes="64x64" href="{% static 'core/360ad-favicon-64.png' %}">
+  <link rel="apple-touch-icon" sizes="192x192" href="{% static 'core/360ad-app-icon-192.png' %}">
   <link rel="stylesheet" href="{% static 'core/app.css' %}">
   <script src="{% static 'core/app.js' %}" defer></script>
 </head>
 <body>
   {% if user.is_authenticated %}
   <aside class="sidebar">
-    <div class="brand"><span>360</span> A.D</div>
-    <div class="brand-subtitle">Pricing & Quotation CRM</div>
+    <a class="sidebar-logo" href="{% url 'dashboard' %}" aria-label="360 A.D Dashboard">
+      <img src="{% static 'core/360ad-logo.png' %}" alt="360 A.D — Ability to Disrupt">
+    </a>
     <nav>
       <a href="{% url 'dashboard' %}">Dashboard</a>
       <a href="{% url 'quotation_list' %}">Quotations</a>
