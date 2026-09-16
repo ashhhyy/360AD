@@ -4,7 +4,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#10263b">
+  <meta name="theme-color" content="#171717">
   <title>{% block title %}360 A.D Pricing CRM{% endblock %}</title>
   <link rel="icon" type="image/png" sizes="64x64" href="{% static 'core/360ad-favicon-64.png' %}">
   <link rel="apple-touch-icon" sizes="192x192" href="{% static 'core/360ad-app-icon-192.png' %}">
@@ -17,12 +17,12 @@
     <a class="sidebar-logo" href="{% url 'dashboard' %}" aria-label="360 A.D Dashboard">
       <img src="{% static 'core/360ad-logo.png' %}" alt="360 A.D — Ability to Disrupt">
     </a>
-    <nav>
-      <a href="{% url 'dashboard' %}">Dashboard</a>
-      <a href="{% url 'quotation_list' %}">Quotations</a>
-      <a href="{% url 'client_list' %}">Clients</a>
-      <a href="{% url 'product_list' %}">Sellable Products</a>
-      <a href="{% url 'cost_item_list' %}">Materials & Costs</a>
+    <nav aria-label="Main navigation">
+      <a {% if request.resolver_match.url_name == 'dashboard' %}class="active" aria-current="page"{% endif %} href="{% url 'dashboard' %}">Dashboard</a>
+      <a {% if '/quotations/' in request.path or '/quote-items/' in request.path or '/extra-costs/' in request.path or '/quotation-additional-costs/' in request.path %}class="active" aria-current="page"{% endif %} href="{% url 'quotation_list' %}">Quotations</a>
+      <a {% if '/clients/' in request.path %}class="active" aria-current="page"{% endif %} href="{% url 'client_list' %}">Clients</a>
+      <a {% if '/products/' in request.path or '/components/' in request.path %}class="active" aria-current="page"{% endif %} href="{% url 'product_list' %}">Sellable Products</a>
+      <a {% if '/cost-items/' in request.path %}class="active" aria-current="page"{% endif %} href="{% url 'cost_item_list' %}">Materials & Costs</a>
       <a href="{% url 'master_data_export_excel' %}">Export Master Data</a>
     </nav>
     <div class="sidebar-footer">
