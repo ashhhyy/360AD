@@ -1,8 +1,10 @@
 from decimal import Decimal
 from datetime import date
+from importlib import import_module
 from io import BytesIO
 from unittest.mock import patch
 
+from django.apps import apps
 from django.contrib.auth.models import User
 from django.core.management import call_command
 from django.test import TestCase
@@ -10,7 +12,7 @@ from django.urls import reverse
 from openpyxl import load_workbook
 
 from .forms import CostItemForm
-from .models import Client, CostItem, Product, ProductCostComponent, Quotation, QuotationAdditionalCost, QuotationItem, QuotationItemExtraCost
+from .models import Client, CostItem, Product, ProductCostComponent, Quotation, QuotationAdditionalCost, QuotationItem, QuotationItemExtraCost, QuotationSequence, ReusableQuotationNumber
 from .services import recalculate_quotation_item
 from .templatetags.pricing_tags import number2
 
@@ -124,6 +126,29 @@ class PricingCrmTests(TestCase):
         response = self.client.post(reverse("quotation_delete", args=[second.pk]))
         self.assertRedirects(response, reverse("quotation_detail", args=[second.pk]))
         self.assertTrue(Quotation.objects.filter(pk=second.pk).exists())
+
+    def test_migration_backfills_numbers_deleted_before_reuse_was_added(self):
+        client = Client.objects.get(name="Walk-In Customer")
+        Quotation.objects.create(
+            quote_number="360AD-2026-00065",
+            quotation_date=date(2026, 9, 1),
+            client=client,
+            created_by=self.admin,
+        )
+        Quotation.objects.create(
+            quote_number="360AD-2026-00070",
+            quotation_date=date(2026, 9, 2),
+            client=client,
+            created_by=self.admin,
+        )
+        QuotationSequence.objects.update_or_create(year=2026, defaults={"next_number": 71})
+        migration = import_module("core.migrations.0006_reusable_quotation_numbers")
+        migration.backfill_reusable_2026_gaps(apps, None)
+
+        self.assertTrue(ReusableQuotationNumber.objects.filter(year=2026, number=55).exists())
+        self.assertTrue(ReusableQuotationNumber.objects.filter(year=2026, number=69).exists())
+        self.assertFalse(ReusableQuotationNumber.objects.filter(year=2026, number=65).exists())
+        self.assertFalse(ReusableQuotationNumber.objects.filter(year=2026, number=70).exists())
 
     def test_saved_snapshot_does_not_change_with_material_rate(self):
         _, item = self.create_tarpaulin_quote()
