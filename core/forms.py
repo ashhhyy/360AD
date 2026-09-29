@@ -31,6 +31,27 @@ class TwoDecimalNumberInput(forms.NumberInput):
             return value
 
 
+class MeasurementNumberInput(forms.NumberInput):
+    """Preserve metric precision while keeping simple values readable."""
+
+    def __init__(self, attrs=None):
+        defaults = dict(attrs or {})
+        defaults.update({"step": "0.0001", "inputmode": "decimal"})
+        super().__init__(defaults)
+
+    def format_value(self, value):
+        if value is None or value == "":
+            return None
+        try:
+            formatted = f"{Decimal(str(value)):.4f}".rstrip("0").rstrip(".")
+            if "." not in formatted:
+                return f"{formatted}.00"
+            decimals = len(formatted.rsplit(".", 1)[1])
+            return formatted + ("0" * max(0, 2 - decimals))
+        except (InvalidOperation, TypeError, ValueError):
+            return value
+
+
 class StyledModelForm(forms.ModelForm):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -93,6 +114,7 @@ class QuotationForm(StyledModelForm):
     class Meta:
         model = Quotation
         fields = [
+            "quote_number",
             "client",
             "project_name",
             "customer_type",
@@ -106,6 +128,21 @@ class QuotationForm(StyledModelForm):
             "quotation_date": forms.DateInput(attrs={"type": "date"}),
             "notes": forms.Textarea(attrs={"rows": 3}),
         }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["quote_number"].label = "Quotation Number (Optional Override)"
+        self.fields["quote_number"].required = False
+        self.fields["quote_number"].help_text = (
+            "Leave blank on a new quotation to use the next automatic 360AD number. "
+            "Enter a different unique number only when an admin override is needed."
+        )
+
+    def clean_quote_number(self):
+        quote_number = (self.cleaned_data.get("quote_number") or "").strip().upper()
+        if not quote_number and self.instance.pk:
+            return self.instance.quote_number
+        return quote_number
 
 
 class QuotationItemForm(StyledModelForm):
@@ -134,6 +171,15 @@ class QuotationItemForm(StyledModelForm):
             "Optional. When entered, this exact amount becomes the final selling price before VAT "
             "and replaces the automatic rate, other charges, discount, and minimum-price calculation."
         )
+        self.fields["unit"].label = "Measurement Unit"
+        self.fields["unit"].help_text = (
+            "Choose how width and height were measured. All area selling and cost rates remain "
+            "uniform and are automatically converted to the per-square-foot basis."
+        )
+        self.fields["width"].help_text = "Use the selected measurement unit below."
+        self.fields["height"].help_text = "Use the selected measurement unit below."
+        for field_name in ("width", "height"):
+            self.fields[field_name].widget = MeasurementNumberInput(attrs=self.fields[field_name].widget.attrs)
         self.fields["product"].queryset = Product.objects.filter(active=True)
 
     def clean(self):

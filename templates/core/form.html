@@ -6,7 +6,7 @@
     {% csrf_token %}
     {% if form.non_field_errors %}<div class="alert error full-row">{{ form.non_field_errors }}</div>{% endif %}
     {% for field in form %}
-      <div class="field {% if field.name == 'notes' or field.name == 'address' %}full-row{% endif %}">
+      <div class="field {% if field.name == 'notes' or field.name == 'address' or field.name == 'quote_number' %}full-row{% endif %}{% if field.name == 'quote_number' %} priority-field{% endif %}">
         {% if field.field.widget.input_type == 'checkbox' %}
           <label class="checkbox-row">{{ field }} <span>{{ field.label }}</span></label>
         {% else %}

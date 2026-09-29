@@ -1,52 +1,53 @@
 {% extends "base.html" %}{% load pricing_tags %}
 {% block content %}
-<div class="page-heading"><div><p class="eyebrow">{{ quotation.get_status_display }}</p><h1>{{ quotation.quote_number }}</h1><p>{{ quotation.client }}{% if quotation.project_name %} · {{ quotation.project_name }}{% endif %}</p></div><div><a class="btn secondary" href="{% url 'quotation_edit' quotation.pk %}">Edit Details</a> <a class="btn secondary" href="{% url 'quotation_export_excel' quotation.pk %}">Export Excel</a> <a class="btn secondary" href="{% url 'quotation_additional_cost_create' quotation.pk %}">+ Project Cost</a> <a class="btn primary" href="{% url 'quotation_item_create' quotation.pk %}">+ Add Item</a></div></div>
-<section class="quote-meta panel">
+<div class="page-heading">
+  <div><p class="eyebrow">{{ quotation.get_status_display }}</p><h1>{{ quotation.quote_number }}</h1><p>{{ quotation.client }}{% if quotation.project_name %} · {{ quotation.project_name }}{% endif %}</p></div>
+  <div class="heading-actions"><a class="btn secondary" href="{% url 'quotation_edit' quotation.pk %}">Edit Details / Number</a><a class="btn secondary" href="{% url 'quotation_export_excel' quotation.pk %}">Export Excel</a><a class="btn secondary" href="{% url 'quotation_additional_cost_create' quotation.pk %}">+ Project Cost</a><a class="btn primary" href="{% url 'quotation_item_create' quotation.pk %}">+ Add Item</a></div>
+</div>
+
+<section class="quote-meta panel" aria-label="Quotation information">
   <div><span>Date</span><strong>{{ quotation.quotation_date }}</strong></div><div><span>Customer Type</span><strong>{{ quotation.get_customer_type_display }}</strong></div><div><span>VAT</span><strong>{{ quotation.vat_percent|number2 }}%</strong></div><div><span>Prepared By</span><strong>{{ quotation.created_by.get_full_name|default:quotation.created_by.username }}</strong></div>
 </section>
 
 {% for item in quotation.items.all %}
-<section class="panel quote-item">
-  <div class="panel-head"><div><p class="eyebrow">ITEM {{ forloop.counter }}</p><h2>{{ item.product.name }}</h2><p>{{ item.description|default:"No additional description" }}</p></div><div class="actions"><a href="{% url 'quotation_item_edit' item.pk %}">Edit</a><a class="danger-link" href="{% url 'quotation_item_delete' item.pk %}">Delete</a></div></div>
-  <div class="item-specs">
-    {% if item.product.pricing_type == 'AREA' %}<div><span>Size</span><strong>{{ item.width|number2 }} × {{ item.height|number2 }} {{ item.get_unit_display }}</strong></div><div><span>Area / pc</span><strong>{{ item.area_per_piece|number2 }} sq.ft.</strong></div>{% endif %}
-    <div><span>Quantity</span><strong>{{ item.quantity|number2 }}</strong></div><div><span>Selling Rate</span><strong>₱{{ item.selling_rate|number2 }}</strong></div><div><span>Other Charges</span><strong>₱{{ item.other_charges|number2 }}</strong></div><div><span>Discount</span><strong>₱{{ item.discount|number2 }}</strong></div>{% if item.selling_price_override is not None %}<div class="override-value"><span>Admin Selling Override</span><strong>₱{{ item.selling_price_override|number2 }}</strong></div>{% endif %}
+<details class="panel quote-item" {% if forloop.first %}open{% endif %}>
+  <summary>
+    <div class="quote-item-summary-main"><span class="item-number">{{ forloop.counter }}</span><div><h2>{{ item.product.name }}</h2><p>{{ item.description|default:"No additional description" }}</p></div></div>
+    <div class="quote-item-summary-total"><span>Selling Price</span><strong>₱{{ item.selling_total|number2 }}</strong></div>
+  </summary>
+  <div class="quote-item-body">
+    <div class="item-actions"><a href="{% url 'quotation_item_edit' item.pk %}">Edit item</a><a class="danger-link" href="{% url 'quotation_item_delete' item.pk %}">Delete item</a></div>
+    <div class="item-specs">
+      {% if item.product.pricing_type == 'AREA' %}<div><span>Entered Size</span><strong>{{ item.width|number2 }} × {{ item.height|number2 }} {{ item.get_unit_display }}</strong></div><div><span>Normalized Area / pc</span><strong>{{ item.area_per_piece|number2 }} sq.ft.</strong></div>{% endif %}
+      <div><span>Quantity</span><strong>{{ item.quantity|number2 }}</strong></div><div><span>Uniform Selling Rate</span><strong>₱{{ item.selling_rate|number2 }}{% if item.product.pricing_type == 'AREA' %} / sq.ft.{% else %} / piece{% endif %}</strong></div><div><span>Other Charges</span><strong>₱{{ item.other_charges|number2 }}</strong></div><div><span>Discount</span><strong>₱{{ item.discount|number2 }}</strong></div>{% if item.selling_price_override is not None %}<div class="override-value"><span>Admin Selling Override</span><strong>₱{{ item.selling_price_override|number2 }}</strong></div>{% endif %}
+    </div>
+    <div class="subhead-row"><div><p class="section-kicker">True cost</p><h3>Itemized cost breakdown</h3></div><a href="{% url 'extra_cost_create' item.pk %}">+ Add job-specific cost</a></div>
+    {% if item.extra_costs.all %}<div class="extra-cost-chips">{% for extra in item.extra_costs.all %}<span>{{ extra.cost_item.name }} × {{ extra.usage_quantity|number2 }} <a href="{% url 'extra_cost_edit' extra.pk %}">Edit</a> <a class="danger-link" href="{% url 'extra_cost_delete' extra.pk %}">Delete</a></span>{% endfor %}</div>{% endif %}
+    <div class="table-wrap"><table data-table data-search="false"><thead><tr><th>Cost Component</th><th>Category</th><th>Basis</th><th data-sort-type="number">Unit Cost</th><th data-sort-type="number">Usage</th><th data-sort-type="number">Computed Qty</th><th data-sort-type="number">Total</th></tr></thead><tbody>
+      {% for line in item.cost_breakdown.all %}<tr><td><strong>{{ line.name }}</strong></td><td>{{ line.category }}</td><td>{{ line.basis }}</td><td data-sort-value="{{ line.unit_cost }}">₱{{ line.unit_cost|number2 }}</td><td data-sort-value="{{ line.usage_quantity }}">{{ line.usage_quantity|number2 }}</td><td data-sort-value="{{ line.computed_quantity }}">{{ line.computed_quantity|number2 }}</td><td data-sort-value="{{ line.total_cost }}">₱{{ line.total_cost|number2 }}</td></tr>{% empty %}<tr><td colspan="7" class="empty">No cost snapshot. Edit and save this item to calculate it.</td></tr>{% endfor %}
+    </tbody><tfoot><tr><td colspan="6">True Cost</td><td>₱{{ item.cost_total|number2 }}</td></tr><tr><td colspan="6">Selling Price {% if item.selling_price_override is not None %}<span class="badge override-badge">Admin override</span>{% endif %}</td><td>₱{{ item.selling_total|number2 }}</td></tr><tr><td colspan="6">Gross Profit</td><td>₱{{ item.selling_total|subtract:item.cost_total|number2 }}</td></tr></tfoot></table></div>
   </div>
-  <div class="subhead-row"><h3>Itemized cost breakdown</h3><a href="{% url 'extra_cost_create' item.pk %}">+ Add job-specific cost</a></div>
-  {% if item.extra_costs.all %}<div class="extra-cost-chips">{% for extra in item.extra_costs.all %}<span>{{ extra.cost_item.name }} × {{ extra.usage_quantity|number2 }} <a href="{% url 'extra_cost_edit' extra.pk %}">Edit</a> <a class="danger-link" href="{% url 'extra_cost_delete' extra.pk %}">Delete</a></span>{% endfor %}</div>{% endif %}
-  <div class="table-wrap"><table><thead><tr><th>Cost Component</th><th>Category</th><th>Basis</th><th>Unit Cost</th><th>Usage</th><th>Computed Qty</th><th>Total</th></tr></thead><tbody>
-  {% for line in item.cost_breakdown.all %}<tr><td><strong>{{ line.name }}</strong></td><td>{{ line.category }}</td><td>{{ line.basis }}</td><td>₱{{ line.unit_cost|number2 }}</td><td>{{ line.usage_quantity|number2 }}</td><td>{{ line.computed_quantity|number2 }}</td><td>₱{{ line.total_cost|number2 }}</td></tr>{% empty %}<tr><td colspan="7" class="empty">No cost snapshot. Edit and save this item to calculate it.</td></tr>{% endfor %}
-  </tbody><tfoot><tr><td colspan="6">True Cost</td><td>₱{{ item.cost_total|number2 }}</td></tr><tr><td colspan="6">Selling Price {% if item.selling_price_override is not None %}<span class="badge override-badge">Admin override</span>{% endif %}</td><td>₱{{ item.selling_total|number2 }}</td></tr><tr><td colspan="6">Gross Profit</td><td>₱{{ item.selling_total|subtract:item.cost_total|number2 }}</td></tr></tfoot></table></div>
-</section>
-{% empty %}
-<section class="panel empty-state"><h2>No products yet</h2><p>Add a product to calculate and save its itemized costs.</p><a class="btn primary" href="{% url 'quotation_item_create' quotation.pk %}">Add First Item</a></section>
-{% endfor %}
+</details>
+{% empty %}<section class="panel empty-state"><h2>No products yet</h2><p>Add a product to calculate and save its itemized costs.</p><a class="btn primary" href="{% url 'quotation_item_create' quotation.pk %}">Add First Item</a></section>{% endfor %}
 
-<section class="panel">
-  <div class="panel-head"><div><h2>Project Cost Consumption Summary</h2><p>Combined consumption of matching materials and production costs across all quotation items.</p></div></div>
-  <div class="table-wrap"><table><thead><tr><th>Cost Item</th><th>Category</th><th>Total Consumed</th><th>Unit</th><th>Total Cost</th></tr></thead><tbody>
-    {% for line in consumption_summary %}
-    <tr><td><strong>{{ line.name }}</strong></td><td>{{ line.category }}</td><td>{% if line.unit_label == 'cost only' %}—{% else %}{{ line.total_consumed|number2 }}{% endif %}</td><td>{{ line.unit_label }}</td><td><strong>₱{{ line.total_cost|number2 }}</strong></td></tr>
-    {% empty %}<tr><td colspan="5" class="empty">No calculated project consumption yet.</td></tr>{% endfor %}
-  </tbody></table></div>
-</section>
+<details class="panel disclosure-panel">
+  <summary><div><p class="section-kicker">Combined usage</p><h2>Project Cost Consumption Summary</h2><p>Matching materials and production costs across all quotation items.</p></div></summary>
+  <div class="disclosure-body"><div class="table-wrap"><table data-table data-search-placeholder="Search project cost consumption..."><thead><tr><th>Cost Item</th><th>Category</th><th data-sort-type="number">Total Consumed</th><th>Unit</th><th data-sort-type="number">Total Cost</th></tr></thead><tbody>
+    {% for line in consumption_summary %}<tr><td><strong>{{ line.name }}</strong></td><td>{{ line.category }}</td><td data-sort-value="{{ line.total_consumed }}">{% if line.unit_label == 'cost only' %}—{% else %}{{ line.total_consumed|number2 }}{% endif %}</td><td>{{ line.unit_label }}</td><td data-sort-value="{{ line.total_cost }}"><strong>₱{{ line.total_cost|number2 }}</strong></td></tr>{% empty %}<tr><td colspan="5" class="empty">No calculated project consumption yet.</td></tr>{% endfor %}
+  </tbody></table></div></div>
+</details>
 
-<section class="panel">
-  <div class="panel-head"><div><h2>Custom Project Costs</h2><p>Project-only expenses increase true cost and reduce GP without changing the client selling price.</p></div><a href="{% url 'quotation_additional_cost_create' quotation.pk %}">+ Add cost</a></div>
-  <div class="table-wrap"><table><thead><tr><th>Cost</th><th>Category</th><th>Notes</th><th>Added By</th><th>Amount</th><th></th></tr></thead><tbody>
-    {% for cost in quotation.additional_costs.all %}
-    <tr><td><strong>{{ cost.name }}</strong></td><td>{{ cost.get_category_display }}</td><td>{{ cost.notes|default:"—" }}</td><td>{{ cost.created_by.get_full_name|default:cost.created_by.username }}</td><td><strong>₱{{ cost.amount|number2 }}</strong></td><td class="actions"><a href="{% url 'quotation_additional_cost_edit' cost.pk %}">Edit</a><a class="danger-link" href="{% url 'quotation_additional_cost_delete' cost.pk %}">Delete</a></td></tr>
-    {% empty %}<tr><td colspan="6" class="empty">No custom project costs added.</td></tr>{% endfor %}
-  </tbody><tfoot><tr><td colspan="4">Custom Cost Total</td><td colspan="2">₱{{ quotation.additional_cost_total|number2 }}</td></tr></tfoot></table></div>
-</section>
+<details class="panel disclosure-panel">
+  <summary><div><p class="section-kicker">Cost adjustments</p><h2>Custom Project Costs</h2><p>Project-only expenses reduce GP without changing the client selling price.</p></div></summary>
+  <div class="disclosure-body">
+    <div class="section-actions"><a class="btn secondary" href="{% url 'quotation_additional_cost_create' quotation.pk %}">+ Add cost</a></div>
+    <div class="table-wrap"><table data-table data-search-placeholder="Search custom project costs..."><thead><tr><th>Cost</th><th>Category</th><th>Notes</th><th>Added By</th><th data-sort-type="number">Amount</th><th data-no-sort="true"></th></tr></thead><tbody>
+      {% for cost in quotation.additional_costs.all %}<tr><td><strong>{{ cost.name }}</strong></td><td>{{ cost.get_category_display }}</td><td>{{ cost.notes|default:"—" }}</td><td>{{ cost.created_by.get_full_name|default:cost.created_by.username }}</td><td data-sort-value="{{ cost.amount }}"><strong>₱{{ cost.amount|number2 }}</strong></td><td class="actions"><a href="{% url 'quotation_additional_cost_edit' cost.pk %}">Edit</a><a class="danger-link" href="{% url 'quotation_additional_cost_delete' cost.pk %}">Delete</a></td></tr>{% empty %}<tr><td colspan="6" class="empty">No custom project costs added.</td></tr>{% endfor %}
+    </tbody><tfoot><tr><td colspan="4">Custom Cost Total</td><td colspan="2">₱{{ quotation.additional_cost_total|number2 }}</td></tr></tfoot></table></div>
+  </div>
+</details>
 
-<section class="totals-panel">
-  <div><span>Itemized Production Cost</span><strong>₱{{ quotation.item_cost_total|number2 }}</strong></div>
-  <div><span>Custom Project Costs</span><strong>₱{{ quotation.additional_cost_total|number2 }}</strong></div>
-  <div><span>Total True Cost</span><strong>₱{{ quotation.total_cost|number2 }}</strong></div>
-  <div><span>Subtotal</span><strong>₱{{ quotation.subtotal|number2 }}</strong></div>
-  <div><span>Gross Profit</span><strong>₱{{ quotation.gross_profit|number2 }}</strong><small>{{ quotation.gp_margin|number2 }}% GP margin</small></div>
-  <div><span>VAT</span><strong>₱{{ quotation.vat_amount|number2 }}</strong></div>
-  <div class="grand"><span>Grand Total</span><strong>₱{{ quotation.grand_total|number2 }}</strong></div>
+<section class="totals-panel" aria-label="Quotation totals">
+  <div><span>Itemized Production Cost</span><strong>₱{{ quotation.item_cost_total|number2 }}</strong></div><div><span>Custom Project Costs</span><strong>₱{{ quotation.additional_cost_total|number2 }}</strong></div><div><span>Total True Cost</span><strong>₱{{ quotation.total_cost|number2 }}</strong></div><div><span>Subtotal</span><strong>₱{{ quotation.subtotal|number2 }}</strong></div><div><span>Gross Profit</span><strong>₱{{ quotation.gross_profit|number2 }}</strong><small>{{ quotation.gp_margin|number2 }}% GP margin</small></div><div><span>VAT</span><strong>₱{{ quotation.vat_amount|number2 }}</strong></div><div class="grand"><span>Grand Total</span><strong>₱{{ quotation.grand_total|number2 }}</strong></div>
 </section>
 {% endblock %}

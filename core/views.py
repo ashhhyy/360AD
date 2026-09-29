@@ -108,6 +108,7 @@ def quick_calculator_preview(request):
         other_charges = _decimal_from_payload(payload, "other_charges")
         discount = _decimal_from_payload(payload, "discount")
         extra_cost = _decimal_from_payload(payload, "extra_cost")
+        unit = payload.get("unit", QuotationItem.Unit.FEET)
         override_value = payload.get("selling_price_override")
         selling_override = None if override_value in (None, "") else _decimal_from_payload(
             payload, "selling_price_override"
@@ -116,6 +117,8 @@ def quick_calculator_preview(request):
             raise ValueError("Quantity must be greater than zero.")
         if product.pricing_type == Product.PricingType.AREA and (width <= 0 or height <= 0):
             raise ValueError("Width and height are required for area-based products.")
+        if unit not in QuotationItem.Unit.values:
+            raise ValueError("Please select a valid measurement unit.")
         if min(other_charges, discount, extra_cost) < 0 or (selling_override is not None and selling_override < 0):
             raise ValueError("Charges, discounts, extra cost, and overrides cannot be negative.")
 
@@ -124,7 +127,7 @@ def quick_calculator_preview(request):
             customer_type=payload.get("customer_type", Quotation.CustomerType.WALK_IN),
             width=width,
             height=height,
-            unit=payload.get("unit", QuotationItem.Unit.FEET),
+            unit=unit,
             quantity=quantity,
             other_charges=other_charges,
             discount=discount,
@@ -310,7 +313,10 @@ def quotation_list(request):
     quotations = Quotation.objects.select_related("client", "created_by")
     if query:
         quotations = quotations.filter(
-            Q(quote_number__icontains=query) | Q(client__name__icontains=query) | Q(client__company__icontains=query)
+            Q(quote_number__icontains=query)
+            | Q(client__name__icontains=query)
+            | Q(client__company__icontains=query)
+            | Q(project_name__icontains=query)
         )
     return render(request, "core/quotations/list.html", {"quotations": quotations, "query": query})
 

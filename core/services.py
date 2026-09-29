@@ -2,7 +2,7 @@ from decimal import Decimal, ROUND_HALF_UP
 
 from django.db import transaction
 
-from .models import Product, ProductCostComponent, QuotationCostSnapshot
+from .models import Product, ProductCostComponent, QuotationCostSnapshot, QuotationItem
 
 
 MONEY = Decimal("0.01")
@@ -27,9 +27,7 @@ def calculate_quick_item(
 ):
     """Calculate a quotation line without creating any database record."""
     if product.pricing_type == Product.PricingType.AREA:
-        area_per_piece = width * height
-        if unit == "IN":
-            area_per_piece = area_per_piece / Decimal("144")
+        area_per_piece = QuotationItem.area_in_square_feet(width, height, unit)
         pricing_quantity = area_per_piece * quantity
     else:
         area_per_piece = Decimal("0")

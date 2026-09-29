@@ -12,31 +12,45 @@
   <script src="{% static 'core/app.js' %}" defer></script>
 </head>
 <body>
+  <a class="skip-link" href="#main-content">Skip to main content</a>
   {% if user.is_authenticated %}
-  <aside class="sidebar">
+  <aside class="sidebar" id="app-sidebar">
     <a class="sidebar-logo" href="{% url 'dashboard' %}" aria-label="360 A.D Dashboard">
       <img src="{% static 'core/360ad-logo.png' %}" alt="360 A.D — Ability to Disrupt">
     </a>
     <nav aria-label="Main navigation">
+      <p class="nav-label">Workspace</p>
       <a {% if request.resolver_match.url_name == 'dashboard' %}class="active" aria-current="page"{% endif %} href="{% url 'dashboard' %}">Dashboard</a>
       <a {% if '/quotations/' in request.path or '/quote-items/' in request.path or '/extra-costs/' in request.path or '/quotation-additional-costs/' in request.path %}class="active" aria-current="page"{% endif %} href="{% url 'quotation_list' %}">Quotations</a>
+      <p class="nav-label">Master Data</p>
       <a {% if '/clients/' in request.path %}class="active" aria-current="page"{% endif %} href="{% url 'client_list' %}">Clients</a>
       <a {% if '/products/' in request.path or '/components/' in request.path %}class="active" aria-current="page"{% endif %} href="{% url 'product_list' %}">Sellable Products</a>
       <a {% if '/cost-items/' in request.path %}class="active" aria-current="page"{% endif %} href="{% url 'cost_item_list' %}">Materials & Costs</a>
+      <p class="nav-label">Tools</p>
       <a href="{% url 'master_data_export_excel' %}">Export Master Data</a>
     </nav>
     <div class="sidebar-footer">
-      <div class="user-name">{{ user.get_full_name|default:user.username }}</div>
-      <div class="muted">Administrator</div>
+      <div class="user-avatar" aria-hidden="true">{{ user.username|first|upper }}</div>
+      <div class="user-details">
+        <div class="user-name">{{ user.get_full_name|default:user.username }}</div>
+        <div class="user-role">{% if user.is_superuser %}Super Administrator{% else %}Administrator{% endif %}</div>
+      </div>
       <form method="post" action="{% url 'logout' %}">{% csrf_token %}<button class="link-button">Log out</button></form>
     </div>
   </aside>
+  <div class="sidebar-overlay" data-sidebar-close></div>
+  <header class="mobile-header">
+    <button class="menu-button" type="button" data-sidebar-toggle aria-controls="app-sidebar" aria-expanded="false"><span></span><span></span><span></span><span class="sr-only">Open navigation</span></button>
+    <span class="mobile-brand">360 A.D</span>
+  </header>
   {% endif %}
-  <main class="{% if user.is_authenticated %}content{% else %}login-shell{% endif %}">
+  <main id="main-content" class="{% if user.is_authenticated %}content{% else %}login-shell{% endif %}">
+    {% if user.is_authenticated %}<div class="content-rail">{% endif %}
     {% if messages %}
-      {% for message in messages %}<div class="alert {{ message.tags }}">{{ message }}</div>{% endfor %}
+      {% for message in messages %}<div class="alert {{ message.tags }}" role="status">{{ message }}</div>{% endfor %}
     {% endif %}
     {% block content %}{% endblock %}
+    {% if user.is_authenticated %}</div>{% endif %}
   </main>
   {% block extra_js %}{% endblock %}
 </body>

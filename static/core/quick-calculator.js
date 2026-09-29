@@ -5,6 +5,10 @@ document.addEventListener("DOMContentLoaded", () => {
   const form = document.getElementById("qc-form");
   const product = document.getElementById("qc-product");
   const vatInput = document.getElementById("qc-vat");
+  const widthInput = document.getElementById("qc-width");
+  const heightInput = document.getElementById("qc-height");
+  const unitInput = document.getElementById("qc-unit");
+  const areaPreview = document.getElementById("qc-area-preview");
   const itemsBody = document.getElementById("qc-items");
   const errorBox = document.getElementById("qc-error");
   const submitButton = form.querySelector('button[type="submit"]');
@@ -29,6 +33,26 @@ document.addEventListener("DOMContentLoaded", () => {
     section.querySelectorAll(".qc-dimension").forEach((field) => {
       field.classList.toggle("qc-hidden", !isArea);
     });
+    updateAreaPreview();
+  };
+
+  const updateAreaPreview = () => {
+    if (!areaPreview) return;
+    const option = product.selectedOptions[0];
+    if (!option || option.dataset.pricingType !== "AREA") return;
+    const divisors = { FT: 1, IN: 12, MM: 304.8, CM: 30.48, M: 0.3048 };
+    const width = Number.parseFloat(widthInput.value);
+    const height = Number.parseFloat(heightInput.value);
+    const divisor = divisors[unitInput.value];
+    if (!Number.isFinite(width) || !Number.isFinite(height) || !divisor) {
+      areaPreview.textContent = "Enter width and height to preview the equivalent square-foot area.";
+      return;
+    }
+    const area = (width / divisor) * (height / divisor);
+    areaPreview.textContent = `Equivalent area: ${area.toLocaleString(undefined, {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    })} sq.ft. Uniform per-sq.ft. rates will be used.`;
   };
 
   const appendCell = (row, text, className = "") => {
@@ -93,6 +117,9 @@ document.addEventListener("DOMContentLoaded", () => {
   };
 
   product.addEventListener("change", updateDimensionFields);
+  widthInput.addEventListener("input", updateAreaPreview);
+  heightInput.addEventListener("input", updateAreaPreview);
+  unitInput.addEventListener("change", updateAreaPreview);
   vatInput.addEventListener("input", renderEstimate);
   document.getElementById("qc-clear").addEventListener("click", () => {
     estimateItems = [];

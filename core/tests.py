@@ -11,7 +11,7 @@ from django.test import TestCase
 from django.urls import reverse
 from openpyxl import load_workbook
 
-from .forms import CostItemForm
+from .forms import CostItemForm, QuotationForm, QuotationItemForm
 from .models import Client, CostItem, Product, ProductCostComponent, Quotation, QuotationAdditionalCost, QuotationItem, QuotationItemExtraCost, QuotationSequence, ReusableQuotationNumber
 from .services import recalculate_quotation_item
 from .templatetags.pricing_tags import number2
@@ -342,6 +342,125 @@ class PricingCrmTests(TestCase):
         self.assertEqual(Decimal(str(payload["cost_total"])), Decimal("38.27"))
         self.assertEqual(Decimal(str(payload["selling_total"])), Decimal("112.50"))
         self.assertEqual(Quotation.objects.count(), before_count)
+
+    def test_equivalent_metric_and_imperial_dimensions_have_uniform_pricing(self):
+        quote = Quotation.objects.create(
+            client=Client.objects.get(name="Walk-In Customer"),
+            customer_type=Quotation.CustomerType.WALK_IN,
+            created_by=self.admin,
+        )
+        product = Product.objects.get(name="Tarpaulin")
+        measurements = [
+            ("3", "2", QuotationItem.Unit.FEET),
+            ("36", "24", QuotationItem.Unit.INCHES),
+            ("914.4", "609.6", QuotationItem.Unit.MILLIMETERS),
+            ("91.44", "60.96", QuotationItem.Unit.CENTIMETERS),
+            ("0.9144", "0.6096", QuotationItem.Unit.METERS),
+        ]
+        results = []
+        for width, height, unit in measurements:
+            item = QuotationItem.objects.create(
+                quotation=quote,
+                product=product,
+                width=Decimal(width),
+                height=Decimal(height),
+                unit=unit,
+                quantity=1,
+                selling_rate=product.walk_in_rate,
+            )
+            recalculate_quotation_item(item)
+            item.refresh_from_db()
+            results.append((item.area_per_piece, item.cost_total, item.selling_total))
+
+        for area, cost, selling in results:
+            self.assertEqual(area, Decimal("6"))
+            self.assertEqual(cost, results[0][1])
+            self.assertEqual(selling, Decimal("150.00"))
+
+    def test_quick_calculator_accepts_metric_measurements(self):
+        self.client.login(username="admin", password="test-password")
+        product = Product.objects.get(name="Tarpaulin")
+        response = self.client.post(
+            reverse("quick_calculator_preview"),
+            data={
+                "product_id": product.pk,
+                "customer_type": Quotation.CustomerType.WALK_IN,
+                "width": "914.4",
+                "height": "609.6",
+                "unit": QuotationItem.Unit.MILLIMETERS,
+                "quantity": "1",
+                "extra_cost": "0",
+                "other_charges": "0",
+                "discount": "0",
+                "selling_price_override": "",
+            },
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(Decimal(str(response.json()["pricing_quantity"])), Decimal("6.0"))
+        self.assertEqual(Decimal(str(response.json()["selling_total"])), Decimal("150.0"))
+
+    def test_manual_standard_quote_number_advances_sequence_and_reserves_number(self):
+        client = Client.objects.get(name="Walk-In Customer")
+        ReusableQuotationNumber.objects.create(year=2026, number=75)
+        manual = Quotation.objects.create(
+            quote_number="360ad-2026-00075",
+            quotation_date=date(2026, 9, 2),
+            client=client,
+            created_by=self.admin,
+        )
+        automatic = Quotation.objects.create(
+            quotation_date=date(2026, 9, 2),
+            client=client,
+            created_by=self.admin,
+        )
+        self.assertEqual(manual.quote_number, "360AD-2026-00075")
+        self.assertEqual(automatic.quote_number, "360AD-2026-00076")
+        self.assertFalse(ReusableQuotationNumber.objects.filter(year=2026, number=75).exists())
+
+    def test_quotation_form_prevents_duplicate_override_and_preserves_blank_edit(self):
+        quote = Quotation.objects.create(
+            quote_number="360AD-2026-00075",
+            quotation_date=date(2026, 9, 2),
+            client=Client.objects.get(name="Walk-In Customer"),
+            created_by=self.admin,
+        )
+        base_data = {
+            "client": quote.client_id,
+            "project_name": "Metric project",
+            "customer_type": quote.customer_type,
+            "status": quote.status,
+            "quotation_date": quote.quotation_date,
+            "validity_days": quote.validity_days,
+            "vat_percent": quote.vat_percent,
+            "notes": "",
+        }
+        duplicate_form = QuotationForm(data={**base_data, "quote_number": "360ad-2026-00075"})
+        self.assertFalse(duplicate_form.is_valid())
+        edit_form = QuotationForm(data={**base_data, "quote_number": ""}, instance=quote)
+        self.assertTrue(edit_form.is_valid(), edit_form.errors)
+        self.assertEqual(edit_form.cleaned_data["quote_number"], "360AD-2026-00075")
+
+    def test_measurement_form_uses_metric_precision_and_renders_all_units(self):
+        quote = Quotation.objects.create(
+            client=Client.objects.get(name="Walk-In Customer"),
+            created_by=self.admin,
+        )
+        product = Product.objects.get(name="Tarpaulin")
+        item = QuotationItem(
+            quotation=quote,
+            product=product,
+            width=Decimal("0.9144"),
+            height=Decimal("0.6096"),
+            unit=QuotationItem.Unit.METERS,
+            selling_rate=product.walk_in_rate,
+        )
+        form = QuotationItemForm(instance=item, quotation=quote)
+        self.assertIn('value="0.9144"', str(form["width"]))
+        self.assertIn('step="0.0001"', str(form["width"]))
+        unit_html = str(form["unit"])
+        for value in ("FT", "IN", "MM", "CM", "M"):
+            self.assertIn(f'value="{value}"', unit_html)
 
     def test_material_crud_create(self):
         self.client.login(username="admin", password="test-password")

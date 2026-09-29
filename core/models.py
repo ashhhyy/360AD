@@ -1,3 +1,4 @@
+import re
 from decimal import Decimal
 
 from django.conf import settings
@@ -244,18 +245,37 @@ class Quotation(TimeStampedModel):
         sequence.save(update_fields=["next_number", "updated_at"])
         return next_number
 
+    @classmethod
+    def _parse_quote_number(cls, quote_number):
+        match = re.fullmatch(r"360AD-(\d{4})-(\d+)", quote_number or "", flags=re.IGNORECASE)
+        if not match:
+            return None
+        return int(match.group(1)), int(match.group(2))
+
+    @classmethod
+    def _advance_sequence_for_manual_number(cls, quote_number):
+        """Reserve a manual standard number and keep automatic numbering ahead of it."""
+        number_parts = cls._parse_quote_number(quote_number)
+        if not number_parts:
+            return
+
+        year, used_number = number_parts
+        minimum_next = max(cls._configured_start_number(year), used_number + 1)
+        sequence, created = QuotationSequence.objects.select_for_update().get_or_create(
+            year=year,
+            defaults={"next_number": minimum_next},
+        )
+        ReusableQuotationNumber.objects.filter(year=year, number=used_number).delete()
+        if not created and sequence.next_number < minimum_next:
+            sequence.next_number = minimum_next
+            sequence.save(update_fields=["next_number", "updated_at"])
+
     @property
     def number_can_be_reused(self):
         return self.status in {self.Status.DRAFT, self.Status.TEST}
 
     def _number_parts(self):
-        try:
-            prefix, year, number = self.quote_number.rsplit("-", 2)
-            if prefix != "360AD":
-                return None
-            return int(year), int(number)
-        except (AttributeError, TypeError, ValueError):
-            return None
+        return self._parse_quote_number(self.quote_number)
 
     def delete(self, *args, **kwargs):
         number_parts = self._number_parts() if self.number_can_be_reused else None
@@ -269,7 +289,22 @@ class Quotation(TimeStampedModel):
 
     def save(self, *args, **kwargs):
         if self.quote_number:
-            return super().save(*args, **kwargs)
+            self.quote_number = self.quote_number.strip().upper()
+            previous = None
+            if self.pk:
+                previous = type(self).objects.filter(pk=self.pk).values("quote_number", "status").first()
+
+            with transaction.atomic():
+                result = super().save(*args, **kwargs)
+                self._advance_sequence_for_manual_number(self.quote_number)
+
+                if previous and previous["quote_number"] != self.quote_number:
+                    previous_parts = self._parse_quote_number(previous["quote_number"])
+                    if previous_parts and previous["status"] in {self.Status.DRAFT, self.Status.TEST}:
+                        year, number = previous_parts
+                        if number >= self._configured_start_number(year):
+                            ReusableQuotationNumber.objects.get_or_create(year=year, number=number)
+                return result
 
         with transaction.atomic():
             sequence_number = self._allocate_number(self.quotation_date.year)
@@ -314,14 +349,17 @@ class Quotation(TimeStampedModel):
 
 class QuotationItem(TimeStampedModel):
     class Unit(models.TextChoices):
-        FEET = "FT", "feet"
-        INCHES = "IN", "inches"
+        FEET = "FT", "feet (ft)"
+        INCHES = "IN", "inches (in)"
+        MILLIMETERS = "MM", "millimeters (mm)"
+        CENTIMETERS = "CM", "centimeters (cm)"
+        METERS = "M", "meters (m)"
 
     quotation = models.ForeignKey(Quotation, on_delete=models.CASCADE, related_name="items")
     product = models.ForeignKey(Product, on_delete=models.PROTECT, related_name="quotation_items")
     description = models.CharField(max_length=240, blank=True)
-    width = models.DecimalField(max_digits=12, decimal_places=3, null=True, blank=True, validators=[MinValueValidator(0)])
-    height = models.DecimalField(max_digits=12, decimal_places=3, null=True, blank=True, validators=[MinValueValidator(0)])
+    width = models.DecimalField(max_digits=14, decimal_places=4, null=True, blank=True, validators=[MinValueValidator(0)])
+    height = models.DecimalField(max_digits=14, decimal_places=4, null=True, blank=True, validators=[MinValueValidator(0)])
     unit = models.CharField(max_length=2, choices=Unit.choices, default=Unit.FEET)
     quantity = models.DecimalField(max_digits=12, decimal_places=2, default=1, validators=[MinValueValidator(Decimal("0.01"))])
     selling_rate = models.DecimalField(max_digits=14, decimal_places=2, validators=[MinValueValidator(0)])
@@ -341,14 +379,25 @@ class QuotationItem(TimeStampedModel):
     class Meta:
         ordering = ["id"]
 
+    @classmethod
+    def area_in_square_feet(cls, width, height, unit):
+        if width is None or height is None:
+            return ZERO
+        divisors_to_feet = {
+            cls.Unit.FEET: Decimal("1"),
+            cls.Unit.INCHES: Decimal("12"),
+            cls.Unit.MILLIMETERS: Decimal("304.8"),
+            cls.Unit.CENTIMETERS: Decimal("30.48"),
+            cls.Unit.METERS: Decimal("0.3048"),
+        }
+        divisor = divisors_to_feet.get(unit, Decimal("1"))
+        return (Decimal(width) / divisor) * (Decimal(height) / divisor)
+
     @property
     def area_per_piece(self):
         if self.product.pricing_type != Product.PricingType.AREA or self.width is None or self.height is None:
             return ZERO
-        area = self.width * self.height
-        if self.unit == self.Unit.INCHES:
-            area = area / Decimal("144")
-        return area
+        return self.area_in_square_feet(self.width, self.height, self.unit)
 
     @property
     def pricing_quantity(self):
