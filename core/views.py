@@ -12,7 +12,7 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.views.decorators.http import require_POST
 from openpyxl import Workbook
-from openpyxl.styles import Alignment, Font, PatternFill
+from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
 from .forms import (
@@ -523,6 +523,234 @@ def _style_sheet(sheet, widths=None):
         sheet.column_dimensions[get_column_letter(index)].width = width
 
 
+JO_COST_HEADERS = [
+    "INK",
+    "TARP",
+    "EYELET",
+    "CLEAR STICKER",
+    "WHITE STICKER",
+    "LAMINATE",
+    "SINTRABOARD",
+    "ACRYLIC",
+    "PANAFLEX",
+    "BACKLIT",
+    "OTHER MATS",
+    "SUBLI",
+    "DTF",
+    "HEAT PRESS",
+    "MUG PRESS",
+    "CUTTER PLATTER",
+    "VERSACUT",
+    "DX5",
+    "EPSON",
+    "CLOTH/SHIRTS/POLO",
+    "TAHI",
+    "TRANSPO",
+    "LALAMOVE",
+    "PACKAGING",
+    "TAPE",
+    "WASTAGE",
+]
+
+
+def _jo_cost_header(name, category=""):
+    """Place a saved cost in the closest matching JO CHECKLIST column."""
+    normalized = " ".join(str(name or "").upper().replace("–", "-").split())
+    category = str(category or "").upper()
+
+    keyword_columns = [
+        (("LALAMOVE", "COURIER", "DELIVERY"), "LALAMOVE"),
+        (("TRANSPORT", "TRANSPO", "TRAVEL", "PARKING"), "TRANSPO"),
+        (("PANAFLEX",), "PANAFLEX"),
+        (("BACKLIT",), "BACKLIT"),
+        (("SINTRA",), "SINTRABOARD"),
+        (("ACRYLIC",), "ACRYLIC"),
+        (("EYELET",), "EYELET"),
+        (("LAMINATE", "LAMINATION"), "LAMINATE"),
+        (("CLEAR STICKER", "CLEAR VINYL"), "CLEAR STICKER"),
+        (("WHITE STICKER", "WHITE GLOSSY", "VINYL STICKER"), "WHITE STICKER"),
+        (("BANNER", "TARPAULIN", "TARP"), "TARP"),
+        (("SUBLIMATION", "SUBLI"), "SUBLI"),
+        (("HEAT PRESS",), "HEAT PRESS"),
+        (("MUG PRESS",), "MUG PRESS"),
+        (("DTF",), "DTF"),
+        (("CUTTER", "PLOTTER", "CUTTING"), "CUTTER PLATTER"),
+        (("VERSACUT",), "VERSACUT"),
+        (("DX5", "ECO-SOLVENT PRINTER"), "DX5"),
+        (("EPSON",), "EPSON"),
+        (("SEWING", "TAHI"), "TAHI"),
+        (("SHIRT", "POLO", "CLOTH", "FABRIC", "TOTE"), "CLOTH/SHIRTS/POLO"),
+        (("PACKAGING", "PACKAGE"), "PACKAGING"),
+        (("TAPE",), "TAPE"),
+        (("WASTAGE", "WASTE"), "WASTAGE"),
+        (("INK",), "INK"),
+    ]
+    for keywords, header in keyword_columns:
+        if any(keyword in normalized for keyword in keywords):
+            return header
+
+    category_columns = {
+        CostItem.Category.INK: "INK",
+        CostItem.Category.LAMINATE: "LAMINATE",
+        CostItem.Category.PACKAGING: "PACKAGING",
+    }
+    return category_columns.get(category, "OTHER MATS")
+
+
+def _jo_project_description(quotation, item):
+    if item is None:
+        return quotation.project_name or "Quotation without line items"
+    item_description = item.description.strip() or item.product.name
+    project_name = quotation.project_name.strip()
+    if project_name and project_name.casefold() != item_description.casefold():
+        return f"{project_name} - {item_description}"
+    return item_description
+
+
+def _create_jo_checklist_sheet(workbook, quotations, *, use_active=False):
+    """Add a JO CHECKLIST-style view without changing any saved CRM data."""
+    if use_active:
+        sheet = workbook.active
+        sheet.title = "JO CHECKLIST"
+    else:
+        sheet = workbook.create_sheet("JO CHECKLIST", 0)
+
+    headers = [
+        "",
+        "DATE ",
+        "JO#",
+        "QT",
+        "PROJ. NAME OOR DESCRPTION",
+        "CLIENT",
+        "SELLING COST",
+        "",
+        "APPROVED",
+        "PAID",
+        "ORDER OF:",
+        "REMARKS/NOTES",
+        "",
+        *JO_COST_HEADERS,
+        "TOTAL",
+        "NET PROFIT",
+    ]
+
+    sheet.merge_cells("A1:AO1")
+    sheet["A1"] = "360 A.D - JO CHECKLIST"
+    sheet.merge_cells("I2:J2")
+    sheet["I2"] = "STATUS"
+    sheet.merge_cells("N2:AM2")
+    sheet["N2"] = "ITEMIZED PROJECT COSTS"
+    sheet.merge_cells("AN2:AO2")
+    sheet["AN2"] = "FINANCIALS"
+    for column, value in enumerate(headers, start=1):
+        sheet.cell(3, column, value)
+
+    approved_statuses = {Quotation.Status.APPROVED, Quotation.Status.ACCEPTED}
+    row_number = 4
+    job_number = 1
+    for quotation in quotations:
+        items = list(quotation.items.all())
+        rows = items or [None]
+        prepared_by = quotation.created_by.get_full_name() or quotation.created_by.username
+        for item_index, item in enumerate(rows):
+            buckets = {header: Decimal("0") for header in JO_COST_HEADERS}
+            if item is not None:
+                for cost in item.cost_breakdown.all():
+                    buckets[_jo_cost_header(cost.name, cost.category)] += cost.total_cost
+            if item_index == 0:
+                for cost in quotation.additional_costs.all():
+                    buckets[_jo_cost_header(cost.name, cost.category)] += cost.amount
+
+            selling = item.selling_total if item is not None else Decimal("0")
+            values = [
+                job_number,
+                quotation.quotation_date,
+                quotation.quote_number,
+                item.quantity if item is not None else None,
+                _jo_project_description(quotation, item),
+                str(quotation.client),
+                selling,
+                None,
+                quotation.status in approved_statuses,
+                None,
+                prepared_by.upper(),
+                quotation.notes if item_index == 0 else "",
+                None,
+                *[buckets[header] or None for header in JO_COST_HEADERS],
+            ]
+            for column, value in enumerate(values, start=1):
+                if isinstance(value, Decimal):
+                    value = float(value)
+                sheet.cell(row_number, column, value)
+            sheet.cell(row_number, 40, f"=SUM(N{row_number}:AM{row_number})")
+            sheet.cell(row_number, 41, f"=G{row_number}-AN{row_number}")
+            row_number += 1
+        job_number += 1
+
+    last_row = max(row_number - 1, 3)
+    navy = "17324D"
+    gold = "F2B134"
+    pale_gold = "FFF4D6"
+    pale_blue = "EEF4F8"
+    white = "FFFFFF"
+    light_border = Side(style="thin", color="D9E1E8")
+    border = Border(bottom=light_border)
+
+    sheet["A1"].fill = PatternFill("solid", fgColor=navy)
+    sheet["A1"].font = Font(color=white, bold=True, size=16)
+    sheet["A1"].alignment = Alignment(horizontal="left", vertical="center")
+    for group_cell in (sheet["I2"], sheet["N2"], sheet["AN2"]):
+        group_cell.fill = PatternFill("solid", fgColor=gold)
+        group_cell.font = Font(color=navy, bold=True)
+        group_cell.alignment = Alignment(horizontal="center", vertical="center")
+    for cell in sheet[3]:
+        if cell.column not in {8, 13}:
+            cell.fill = PatternFill("solid", fgColor=navy)
+            cell.font = Font(color=white, bold=True)
+        cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+
+    for row in range(4, last_row + 1):
+        row_fill = PatternFill("solid", fgColor=pale_blue if row % 2 == 0 else white)
+        for cell in sheet[row]:
+            if cell.column not in {8, 13}:
+                cell.fill = row_fill
+                cell.border = border
+            cell.alignment = Alignment(vertical="top", wrap_text=cell.column in {5, 6, 12})
+        if sheet.cell(row, 9).value:
+            sheet.cell(row, 9).fill = PatternFill("solid", fgColor="D9EAD3")
+        else:
+            sheet.cell(row, 9).fill = PatternFill("solid", fgColor=pale_gold)
+
+    widths = [5, 13, 22, 10, 42, 28, 16, 3, 12, 10, 18, 32, 3] + [15] * 26 + [16, 16]
+    for index, width in enumerate(widths, start=1):
+        sheet.column_dimensions[get_column_letter(index)].width = width
+    sheet.row_dimensions[1].height = 28
+    sheet.row_dimensions[2].height = 22
+    sheet.row_dimensions[3].height = 42
+    for row in range(4, last_row + 1):
+        sheet.row_dimensions[row].height = 30
+
+    for row in range(4, last_row + 1):
+        sheet.cell(row, 2).number_format = 'dd-mmm-yyyy'
+        sheet.cell(row, 4).number_format = '#,##0.00'
+        for column in [7, *range(14, 42)]:
+            sheet.cell(row, column).number_format = '#,##0.00'
+        for column in {1, 3, 4, 9, 10, 11}:
+            sheet.cell(row, column).alignment = Alignment(horizontal="center", vertical="top", wrap_text=True)
+
+    sheet.freeze_panes = "H4"
+    sheet.auto_filter.ref = f"A3:AO{last_row}"
+    sheet.sheet_view.showGridLines = False
+    sheet.sheet_properties.tabColor = gold
+    sheet.print_title_rows = "1:3"
+    sheet.sheet_properties.pageSetUpPr.fitToPage = True
+    sheet.page_setup.orientation = "landscape"
+    sheet.page_setup.fitToWidth = 1
+    sheet.page_setup.fitToHeight = 0
+    sheet.print_options.horizontalCentered = True
+    return sheet
+
+
 def _prefetched_quotation_totals(quotation):
     items = list(quotation.items.all())
     additional_costs = list(quotation.additional_costs.all())
@@ -556,8 +784,8 @@ def quotation_export_excel(request, pk):
         pk=pk,
     )
     workbook = Workbook()
-    summary = workbook.active
-    summary.title = "Quotation"
+    _create_jo_checklist_sheet(workbook, [quotation], use_active=True)
+    summary = workbook.create_sheet("Quotation")
     summary.append(["360 A.D QUOTATION", quotation.quote_number, "Date", quotation.quotation_date])
     summary.append(["Client", str(quotation.client), "Project", quotation.project_name])
     summary.append(["Customer Type", quotation.get_customer_type_display(), "Status", quotation.get_status_display()])
@@ -710,8 +938,8 @@ def quotations_export_all_excel(request):
         .order_by("quotation_date", "quote_number")
     )
     workbook = Workbook()
-    summary = workbook.active
-    summary.title = "Quotation Summary"
+    _create_jo_checklist_sheet(workbook, quotations, use_active=True)
+    summary = workbook.create_sheet("Quotation Summary")
     summary.append(
         [
             "Quotation No.",

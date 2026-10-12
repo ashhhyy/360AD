@@ -275,8 +275,16 @@ class PricingCrmTests(TestCase):
         workbook = load_workbook(BytesIO(response.content), data_only=False)
         self.assertEqual(
             workbook.sheetnames,
-            ["Quotation", "Project Cost Summary", "Itemized Costs", "Project Additional Costs"],
+            ["JO CHECKLIST", "Quotation", "Project Cost Summary", "Itemized Costs", "Project Additional Costs"],
         )
+        checklist = workbook["JO CHECKLIST"]
+        self.assertEqual(checklist["C4"].value, quote.quote_number)
+        self.assertEqual(checklist["E4"].value, "Tarpaulin")
+        self.assertEqual(checklist["O4"].value, 13.5)
+        self.assertEqual(checklist["AJ4"].value, 250)
+        self.assertEqual(checklist["AN4"].value, "=SUM(N4:AM4)")
+        self.assertEqual(checklist["AO4"].value, "=G4-AN4")
+        self.assertEqual(checklist.freeze_panes, "H4")
         self.assertEqual(workbook["Quotation"]["I5"].value, "Manual Override")
         project_cost_names = [cell.value for cell in workbook["Project Cost Summary"]["A"][1:]]
         self.assertIn("Banner 10oz Tarpaulin", project_cost_names)
@@ -304,6 +312,7 @@ class PricingCrmTests(TestCase):
         self.assertEqual(
             workbook.sheetnames,
             [
+                "JO CHECKLIST",
                 "Quotation Summary",
                 "Item Details",
                 "Cost Breakdown",
@@ -311,6 +320,12 @@ class PricingCrmTests(TestCase):
                 "Monthly Summary",
             ],
         )
+        checklist = workbook["JO CHECKLIST"]
+        self.assertEqual(checklist["C4"].value, quote.quote_number)
+        self.assertIs(checklist["I4"].value, True)
+        self.assertIsNone(checklist["J4"].value)
+        self.assertEqual(checklist["AJ4"].value, 50)
+        self.assertEqual(checklist["AN4"].value, "=SUM(N4:AM4)")
         self.assertEqual(workbook["Quotation Summary"]["A2"].value, quote.quote_number)
         self.assertEqual(workbook["Quotation Summary"]["L2"].value, float(item.cost_total + Decimal("50.00")))
         self.assertEqual(workbook["Item Details"]["F2"].value, "Tarpaulin")
