@@ -15,6 +15,7 @@ from .forms import CostItemForm, QuotationForm, QuotationItemForm
 from .models import Client, CostItem, Product, ProductCostComponent, Quotation, QuotationAdditionalCost, QuotationItem, QuotationItemExtraCost, QuotationSequence, ReusableQuotationNumber
 from .services import recalculate_quotation_item
 from .templatetags.pricing_tags import number2
+from .views import _jo_cost_header
 
 
 class PricingCrmTests(TestCase):
@@ -282,6 +283,7 @@ class PricingCrmTests(TestCase):
         self.assertEqual(checklist["E4"].value, "Tarpaulin")
         self.assertEqual(checklist["O4"].value, 13.5)
         self.assertEqual(checklist["AJ4"].value, 250)
+        self.assertIsNone(checklist["X4"].value)
         self.assertEqual(checklist["AN4"].value, "=SUM(N4:AM4)")
         self.assertEqual(checklist["AO4"].value, "=G4-AN4")
         self.assertEqual(checklist.freeze_panes, "H4")
@@ -331,6 +333,17 @@ class PricingCrmTests(TestCase):
         self.assertEqual(workbook["Item Details"]["F2"].value, "Tarpaulin")
         self.assertEqual(workbook["Project Additional Costs"]["D2"].value, "Delivery")
         self.assertEqual(workbook["Monthly Summary"]["D2"].value, 1)
+
+    def test_jo_export_cost_mapping_matches_checklist_rules(self):
+        self.assertIsNone(_jo_cost_header("Electricity - Area Production", CostItem.Category.ELECTRICITY))
+        self.assertIsNone(_jo_cost_header("Manpower - Area Production", CostItem.Category.MANPOWER))
+        self.assertIsNone(_jo_cost_header("Production buffer (5.00%)", "Buffer / Overhead"))
+        self.assertEqual(_jo_cost_header("Hologram Sticker", CostItem.Category.MATERIAL), "CLEAR STICKER")
+        self.assertEqual(_jo_cost_header("White Mug", CostItem.Category.MATERIAL), "OTHER MATS")
+        self.assertEqual(_jo_cost_header("Mug Procurement / Setup", CostItem.Category.OTHER), "OTHER MATS")
+        self.assertEqual(_jo_cost_header("Blank Pen", CostItem.Category.MATERIAL), "OTHER MATS")
+        self.assertEqual(_jo_cost_header("UV Print", CostItem.Category.MACHINE), "OTHER MATS")
+        self.assertEqual(_jo_cost_header("Foam Board 5mm", CostItem.Category.BOARD), "OTHER MATS")
 
     def test_quick_calculator_matches_saved_item_without_saving_quote(self):
         self.client.login(username="admin", password="test-password")

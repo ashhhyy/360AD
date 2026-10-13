@@ -558,6 +558,16 @@ def _jo_cost_header(name, category=""):
     normalized = " ".join(str(name or "").upper().replace("–", "-").split())
     category = str(category or "").upper()
 
+    ignored_categories = {
+        CostItem.Category.ELECTRICITY,
+        CostItem.Category.MANPOWER,
+        "BUFFER / OVERHEAD",
+        "OVERHEAD",
+    }
+    ignored_keywords = ("ELECTRICITY", "MANPOWER", "PRODUCTION BUFFER", "OVERHEAD")
+    if category in ignored_categories or any(keyword in normalized for keyword in ignored_keywords):
+        return None
+
     keyword_columns = [
         (("LALAMOVE", "COURIER", "DELIVERY"), "LALAMOVE"),
         (("TRANSPORT", "TRANSPO", "TRAVEL", "PARKING"), "TRANSPO"),
@@ -567,7 +577,7 @@ def _jo_cost_header(name, category=""):
         (("ACRYLIC",), "ACRYLIC"),
         (("EYELET",), "EYELET"),
         (("LAMINATE", "LAMINATION"), "LAMINATE"),
-        (("CLEAR STICKER", "CLEAR VINYL"), "CLEAR STICKER"),
+        (("CLEAR STICKER", "CLEAR VINYL", "HOLOGRAM STICKER"), "CLEAR STICKER"),
         (("WHITE STICKER", "WHITE GLOSSY", "VINYL STICKER"), "WHITE STICKER"),
         (("BANNER", "TARPAULIN", "TARP"), "TARP"),
         (("SUBLIMATION", "SUBLI"), "SUBLI"),
@@ -656,10 +666,14 @@ def _create_jo_checklist_sheet(workbook, quotations, *, use_active=False):
             buckets = {header: Decimal("0") for header in JO_COST_HEADERS}
             if item is not None:
                 for cost in item.cost_breakdown.all():
-                    buckets[_jo_cost_header(cost.name, cost.category)] += cost.total_cost
+                    header = _jo_cost_header(cost.name, cost.category)
+                    if header is not None:
+                        buckets[header] += cost.total_cost
             if item_index == 0:
                 for cost in quotation.additional_costs.all():
-                    buckets[_jo_cost_header(cost.name, cost.category)] += cost.amount
+                    header = _jo_cost_header(cost.name, cost.category)
+                    if header is not None:
+                        buckets[header] += cost.amount
 
             selling = item.selling_total if item is not None else Decimal("0")
             values = [
