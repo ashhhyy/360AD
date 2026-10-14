@@ -362,19 +362,28 @@ def quotation_detail(request, pk):
 @admin_required
 def quotation_delete(request, pk):
     quotation = get_object_or_404(Quotation, pk=pk)
-    if not quotation.number_can_be_reused:
-        messages.error(
-            request,
-            "Only Draft or Test quotations can be deleted. Change issued quotations to Rejected or Expired instead.",
-        )
-        return redirect("quotation_detail", pk=quotation.pk)
     if request.method == "POST":
         released_number = quotation.quote_number
+        number_will_be_reused = quotation.number_can_be_reused
         with transaction.atomic():
             quotation.delete()
-        messages.success(request, f"Draft/Test quotation deleted. {released_number} is available for reuse.")
+        if number_will_be_reused:
+            messages.success(request, f"Quotation deleted. {released_number} is available for reuse.")
+        else:
+            messages.success(request, f"Quotation deleted. {released_number} will not be reused.")
         return redirect("quotation_list")
-    return render(request, "core/confirm_delete.html", {"object": quotation, "label": "Draft/Test quotation"})
+    return render(
+        request,
+        "core/confirm_delete.html",
+        {
+            "object": quotation,
+            "label": "quotation",
+            "warning": (
+                "This permanently deletes the quotation, its items, and all saved cost details. "
+                "Approved and Accepted quotation numbers are kept retired and will not be reused."
+            ),
+        },
+    )
 
 
 @admin_required

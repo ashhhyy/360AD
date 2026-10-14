@@ -2,7 +2,7 @@
 {% block content %}
 <div class="page-heading">
   <div><p class="eyebrow">{{ quotation.get_status_display }}</p><h1>{{ quotation.quote_number }}</h1><p>{{ quotation.client }}{% if quotation.project_name %} · {{ quotation.project_name }}{% endif %}</p></div>
-  <div class="heading-actions"><a class="btn secondary" href="{% url 'quotation_edit' quotation.pk %}">Edit Details / Number</a><a class="btn secondary" href="{% url 'quotation_export_excel' quotation.pk %}">Export Excel</a><a class="btn secondary" href="{% url 'quotation_additional_cost_create' quotation.pk %}">+ Project Cost</a><a class="btn primary" href="{% url 'quotation_item_create' quotation.pk %}">+ Add Item</a></div>
+  <div class="heading-actions"><a class="btn secondary" href="{% url 'quotation_edit' quotation.pk %}">Edit Details / Number</a><a class="btn secondary" href="{% url 'quotation_export_excel' quotation.pk %}">Export Excel</a><a class="btn secondary" href="{% url 'quotation_additional_cost_create' quotation.pk %}">+ Project Cost</a><a class="btn primary" href="{% url 'quotation_item_create' quotation.pk %}">+ Add Item</a><a class="btn danger" href="{% url 'quotation_delete' quotation.pk %}">Delete Quotation</a></div>
 </div>
 
 <section class="quote-meta panel" aria-label="Quotation information">

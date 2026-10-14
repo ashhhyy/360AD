@@ -103,7 +103,7 @@ class PricingCrmTests(TestCase):
         self.assertEqual(second_live.quote_number, "360AD-2026-00056")
         self.assertEqual(next_year.quote_number, "360AD-2027-00001")
 
-    def test_deleted_draft_number_is_reused_but_issued_quote_cannot_be_deleted(self):
+    def test_admin_can_delete_any_status_but_only_draft_number_is_reused(self):
         client = Client.objects.get(name="Walk-In Customer")
         first = Quotation.objects.create(
             quotation_date=date(2026, 9, 2), client=client, created_by=self.admin
@@ -124,9 +124,33 @@ class PricingCrmTests(TestCase):
 
         second.status = Quotation.Status.APPROVED
         second.save()
+        second_number = second.quote_number
         response = self.client.post(reverse("quotation_delete", args=[second.pk]))
-        self.assertRedirects(response, reverse("quotation_detail", args=[second.pk]))
-        self.assertTrue(Quotation.objects.filter(pk=second.pk).exists())
+        self.assertRedirects(response, reverse("quotation_list"))
+        self.assertFalse(Quotation.objects.filter(pk=second.pk).exists())
+
+        accepted = Quotation.objects.create(
+            quotation_date=date(2026, 9, 2),
+            client=client,
+            created_by=self.admin,
+            status=Quotation.Status.ACCEPTED,
+        )
+        accepted_number = accepted.quote_number
+        response = self.client.post(reverse("quotation_delete", args=[accepted.pk]))
+        self.assertRedirects(response, reverse("quotation_list"))
+        self.assertFalse(Quotation.objects.filter(pk=accepted.pk).exists())
+
+        next_quote = Quotation.objects.create(
+            quotation_date=date(2026, 9, 2), client=client, created_by=self.admin
+        )
+        self.assertNotIn(next_quote.quote_number, {second_number, accepted_number})
+
+    def test_non_admin_cannot_delete_quotation(self):
+        quote, _ = self.create_tarpaulin_quote()
+        self.client.login(username="sales", password="test-password")
+        response = self.client.post(reverse("quotation_delete", args=[quote.pk]))
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(Quotation.objects.filter(pk=quote.pk).exists())
 
     def test_migration_backfills_numbers_deleted_before_reuse_was_added(self):
         client = Client.objects.get(name="Walk-In Customer")
