@@ -106,6 +106,44 @@ class Command(BaseCommand):
                     defaults={"usage_quantity": 1, "sequence": sequence * 10},
                 )
 
+        # A laminated clear sticker uses the existing clear media recipe plus glossy film.
+        # Copy live admin values on first creation; later seed runs must not reset edits.
+        clear = Product.objects.filter(name__iexact="Clear Sticker Glossy").first()
+        clear_recipe = list(clear.cost_components.all()) if clear else []
+        if clear_recipe:
+            white = Product.objects.get(name="Vinyl Sticker")
+            white_laminated = Product.objects.get(name="Vinyl Sticker with Laminating")
+            walk_in_premium = max(Decimal("0"), white_laminated.walk_in_rate - white.walk_in_rate)
+            tie_up_premium = max(Decimal("0"), white_laminated.tie_up_rate - white.tie_up_rate)
+            clear_laminated, _ = Product.objects.get_or_create(
+                name="Clear Sticker Glossy with Laminating",
+                defaults={
+                    "pricing_type": clear.pricing_type,
+                    "walk_in_rate": clear.walk_in_rate + walk_in_premium,
+                    "tie_up_rate": clear.tie_up_rate + tie_up_premium,
+                    "minimum_price": clear.minimum_price,
+                    "buffer_percent": clear.buffer_percent,
+                    "active": clear.active,
+                },
+            )
+            for component in clear_recipe:
+                ProductCostComponent.objects.get_or_create(
+                    product=clear_laminated,
+                    cost_item=component.cost_item,
+                    basis=component.basis,
+                    defaults={
+                        "usage_quantity": component.usage_quantity,
+                        "sequence": component.sequence,
+                        "notes": component.notes,
+                    },
+                )
+            ProductCostComponent.objects.get_or_create(
+                product=clear_laminated,
+                cost_item=items["laminate"],
+                basis=ProductCostComponent.Basis.AREA,
+                defaults={"usage_quantity": 1, "sequence": clear_recipe[0].sequence + 5},
+            )
+
         piece_products = [
             ("Tshirt 1 side A4 DTF Print", 250, 200, [("shirt", "PIECE"), ("shirt_setup", "FIXED"), ("dtf_setup", "FIXED"), ("packaging106", "PIECE"), ("electricity_piece", "PIECE"), ("manpower_piece", "PIECE")]),
             ("Sublimation Mug", 85, 75, [("mug", "PIECE"), ("mug_setup", "FIXED"), ("sublimation_setup", "FIXED"), ("packaging106", "PIECE"), ("electricity_piece", "PIECE"), ("manpower_piece", "PIECE")]),
