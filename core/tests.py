@@ -551,6 +551,45 @@ class PricingCrmTests(TestCase):
         self.assertEqual(product.walk_in_rate, Decimal("999.00"))
         self.assertEqual(component.usage_quantity, Decimal("2.0000"))
 
+    def test_laminated_clear_sticker_reuses_live_clear_recipe_and_lamination(self):
+        clear_media = CostItem.objects.create(
+            name="Clear Glossy Vinyl Sticker",
+            category=CostItem.Category.MATERIAL,
+            unit=CostItem.Unit.SQFT,
+            unit_cost=Decimal("8.0000"),
+        )
+        clear = Product.objects.create(
+            name="Clear Sticker Glossy",
+            pricing_type=Product.PricingType.AREA,
+            walk_in_rate=Decimal("100.00"),
+            tie_up_rate=Decimal("85.00"),
+            minimum_price=Decimal("150.00"),
+            buffer_percent=Decimal("5.00"),
+        )
+        ProductCostComponent.objects.create(
+            product=clear,
+            cost_item=clear_media,
+            basis=ProductCostComponent.Basis.AREA,
+            usage_quantity=1,
+            sequence=10,
+        )
+        call_command("seed_360ad", verbosity=0)
+
+        laminated = Product.objects.get(name="Clear Sticker Glossy with Laminating")
+        self.assertEqual(laminated.walk_in_rate, Decimal("115.00"))
+        self.assertEqual(laminated.tie_up_rate, Decimal("95.00"))
+        self.assertEqual(laminated.minimum_price, clear.minimum_price)
+        self.assertEqual(
+            set(laminated.cost_components.values_list("cost_item__name", flat=True)),
+            {"Clear Glossy Vinyl Sticker", "Cold Lamination Glossy"},
+        )
+        laminated.walk_in_rate = Decimal("125.00")
+        laminated.save()
+        call_command("seed_360ad", verbosity=0)
+        laminated.refresh_from_db()
+        self.assertEqual(laminated.walk_in_rate, Decimal("125.00"))
+        self.assertEqual(laminated.cost_components.count(), 2)
+
     def test_admin_pages_render(self):
         quote, item = self.create_tarpaulin_quote()
         self.client.login(username="admin", password="test-password")
